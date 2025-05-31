@@ -159,7 +159,6 @@ def main():
 
     if st.button("Очистить список игроков"):
         st.session_state['players'] = []
-        st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
