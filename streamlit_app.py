@@ -145,20 +145,33 @@ for row in rows:
     print(f"{row['Имя']:<12} {row['Распределённый опыт']:>20,} {row['Нераспределённый опыт']:>15,} {row['Всего опыта']:>15,} {row['Осталось до макс.']:>15,}")  
 
 def main():
-    st.title("Калькулятор опыта игрока")
-    name = st.text_input("Фамилия/Имя игрока")
-    
-    # Ввод уровней по каждому стату
-    levels = {}
-    st.header("Уровни характеристик")
-    for stat in default_levels:
-        levels[stat] = st.number_input(f"{stat}", min_value=2, max_value=60, value=default_levels[stat])
-    unspent_xp = st.number_input("Нераспределённый опыт", min_value=0, value=0)
-    
-    if st.button("Рассчитать"):
-        player = Player(name, levels, xp_x, unspent_xp)
-        player.summary()
-        st.write(player.summary_row())
+    if 'players' not in st.session_state:
+        st.session_state['players'] = []
+
+    st.title("Калькулятор опыта команды")
+
+    with st.form("player_form"):
+        name = st.text_input("Фамилия/Имя игрока")
+        levels = {}
+        for stat in default_levels:
+            levels[stat] = st.number_input(f"{stat}", min_value=2, max_value=60, value=default_levels[stat], key=f"{stat}_{name}")
+        unspent_xp = st.number_input("Нераспределённый опыт", min_value=0, value=0, key=f"xp_{name}")
+        submitted = st.form_submit_button("Добавить игрока")
+
+        if submitted and name:
+            player = create_player(name, levels, xp_x, unspent_xp)
+            st.session_state['players'].append(player)
+            st.success(f"Добавлен игрок: {name}")
+
+    st.subheader("Список игроков и результаты:")
+    if st.session_state['players']:
+        for player in st.session_state['players']:
+            st.write(player.summary_row())
+
+        # (дополнительно) — итоговая таблица по всем игрокам
+        import pandas as pd
+        df = pd.DataFrame([p.summary_row() for p in st.session_state['players']])
+        st.dataframe(df)
 
 if __name__ == "__main__":
     main()
