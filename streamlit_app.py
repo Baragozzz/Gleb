@@ -133,7 +133,6 @@ def main():
 
     st.title("Калькулятор опыта команды")
 
-    # Форма для одного игрока
     with st.form("player_form", clear_on_submit=True):
         name = st.text_input("Фамилия/Имя игрока")
         levels = {}
