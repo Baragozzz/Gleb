@@ -124,54 +124,43 @@ def create_player(name: str, custom_levels: dict, xp_table: XPTable, unspent_xp:
     full_levels.update(custom_levels)
     return Player(name=name, levels=full_levels, xp_table=xp_table, unspent_xp=unspent_xp)
 
-players = [
-    create_player("Макаке", {"От": 50, "Оп": 50, "Вн": 37}, xp_x, unspent_xp=946350494),
-    create_player("Макаков", {"От": 40, "Оп": 10, "Вн": 37}, xp_x, unspent_xp=603663996),
-    create_player("Макакелли", {"От": 40, "Оп": 10, "Вн": 37}, xp_x, unspent_xp=1255048619),
-    create_player("Макакян", {"От": 50, "Оп": 50, "Вн": 37}, xp_x, unspent_xp=1330630311),
-    create_player("Макакич", {"Др": 25, "Пм": 30, "Вн": 37, "Пс": 40}, xp_x, unspent_xp=685312555),
-    create_player("Макакис", {"Др": 30, "Пм": 25, "Вн": 37, "Пс": 40}, xp_x, unspent_xp=616855888),
-    create_player("Макакава", {"Др": 30, "Пм": 20, "Вн": 37, "Пс": 50}, xp_x, unspent_xp=1232085430),
-    create_player("Мс Акерман", {"Вн": 40, "Сл": 50, "Тч": 50}, xp_x, unspent_xp=1395707935),
-    create_player("Макаквел", {"Вн": 40, "Сл": 50, "Тч": 50}, xp_x, unspent_xp=1215740470),
-    create_player("Макакер ", {"Вн": 40, "Сл": 50, "Тч": 50}, xp_x, unspent_xp=1368078427)
-]
-
-rows = [player.summary_row() for player in players]
-
-print(f"{'Имя':<12} {'Распределённый':>20} {'Нераспр.':>15} {'Всего':>15} {'Осталось':>15}")
-print("-" * 80)
-for row in rows:
-    print(f"{row['Имя']:<12} {row['Распределённый опыт']:>20,} {row['Нераспределённый опыт']:>15,} {row['Всего опыта']:>15,} {row['Осталось до макс.']:>15,}")  
 
 def main():
+    xp_x = XPTable(xp_data=xp_table)
+
     if 'players' not in st.session_state:
         st.session_state['players'] = []
 
     st.title("Калькулятор опыта команды")
 
-    with st.form("player_form"):
+    # Форма для одного игрока
+    with st.form("player_form", clear_on_submit=True):
         name = st.text_input("Фамилия/Имя игрока")
         levels = {}
+        st.write("Уровни характеристик:")
         for stat in default_levels:
-            levels[stat] = st.number_input(f"{stat}", min_value=2, max_value=60, value=default_levels[stat], key=f"{stat}_{name}")
-        unspent_xp = st.number_input("Нераспределённый опыт", min_value=0, value=0, key=f"xp_{name}")
+            levels[stat] = st.number_input(
+                f"{stat}", min_value=2, max_value=60, value=default_levels[stat],
+                key=f"{stat}_form"
+            )
+        unspent_xp = st.number_input("Нераспределённый опыт", min_value=0, value=0, key="xp_form")
         submitted = st.form_submit_button("Добавить игрока")
 
         if submitted and name:
-            player = create_player(name, levels, xp_x, unspent_xp)
+            player = create_player(name, levels.copy(), xp_x, unspent_xp)
             st.session_state['players'].append(player)
             st.success(f"Добавлен игрок: {name}")
 
     st.subheader("Список игроков и результаты:")
     if st.session_state['players']:
-        for player in st.session_state['players']:
-            st.write(player.summary_row())
-
-        # (дополнительно) — итоговая таблица по всем игрокам
         import pandas as pd
-        df = pd.DataFrame([p.summary_row() for p in st.session_state['players']])
+        rows = [player.summary_row() for player in st.session_state['players']]
+        df = pd.DataFrame(rows)
         st.dataframe(df)
+
+    if st.button("Очистить список игроков"):
+        st.session_state['players'] = []
+        st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
