@@ -80,7 +80,7 @@ class XPTable:
 
 
 class Player:
-    def __init__(self, name: str, levels: dict, xp_table: XPTable, unspent_xp: int = 0):
+    def __init__(self, name: str, levels: dict, max_level: int, xp_table: XPTable, unspent_xp: int = 0):
         self.name = name
         self.levels = levels
         self.xp_table = xp_table
@@ -121,10 +121,10 @@ class Player:
         }
 xp_x = XPTable(xp_data=xp_table)
 
-def create_player(name: str, custom_levels: dict, xp_table: XPTable, unspent_xp: int = 0) -> Player:
+def create_player(name: str, custom_levels: dict, max_level: int, xp_table: XPTable, unspent_xp: int = 0) -> Player:
     full_levels = default_levels.copy()
-    full_levels.update(custom_levels))
-       return Player(name=name, levels=full_levels, xp_table=xp_table, max_level=max_level, unspent_xp=unspent_xp)   
+    full_levels.update(custom_levels)
+    return Player(name=name, levels=full_levels, xp_table=xp_table, max_level=max_level, unspent_xp=unspent_xp)   
 
 
 def main():
