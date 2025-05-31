@@ -151,6 +151,10 @@ def main():
             st.success(f"Добавлен игрок: {name}")
 
     st.subheader("Список игроков и результаты:")
+    if st.button("Очистить список игроков"):
+        st.session_state['players'] = []
+        st.info("Список очищен!")  # Покажи уведомление для пользователя
+    
     if st.session_state['players']:
         import pandas as pd
         rows = [player.summary_row() for player in st.session_state['players']]
@@ -159,9 +163,6 @@ def main():
     else:
         st.info("Пока нет игроков в списке.")
 
-    if st.button("Очистить список игроков"):
-       st.session_state['players'] = []
-       st.info("Список очищен!")  # Покажи уведомление для пользователя
-
+    
 if __name__ == "__main__":
     main()
