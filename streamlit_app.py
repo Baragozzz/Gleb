@@ -158,9 +158,9 @@ def main():
         st.dataframe(df)
 
     if st.button("Очистить список игроков"):
-    if st.session_state['players']:  
-        st.session_state['players'] = []
-        st.experimental_rerun()
+       if st.session_state['players']:  
+           st.session_state['players'] = []
+           st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
