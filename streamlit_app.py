@@ -156,6 +156,8 @@ def main():
         rows = [player.summary_row() for player in st.session_state['players']]
         df = pd.DataFrame(rows)
         st.dataframe(df)
+    else:
+        st.info("Пока нет игроков в списке.")
 
     if st.button("Очистить список игроков"):
        st.session_state['players'] = []
