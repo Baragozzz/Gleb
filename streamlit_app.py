@@ -157,7 +157,7 @@ def main():
         df = pd.DataFrame(rows)
         st.dataframe(df)
 
-    if if st.button("Очистить список игроков"):
+    if st.button("Очистить список игроков"):
     if st.session_state['players']:  
         st.session_state['players'] = []
         st.experimental_rerun()
