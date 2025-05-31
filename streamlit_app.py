@@ -85,6 +85,7 @@ class Player:
         self.levels = levels
         self.xp_table = xp_table
         self.unspent_xp = unspent_xp
+        self.max_level = max_level
 
     def distributed_xp(self):
         return sum(self.xp_table.xp_between(2, lvl) for lvl in self.levels.values())
@@ -112,6 +113,7 @@ class Player:
     def summary_row(self):
         return {
             "Имя": self.name,
+            "Макс. ур.": self.max_level,
             "Распределённый опыт": self.distributed_xp(),
             "Нераспределённый опыт": self.unspent_xp,
             "Всего опыта": self.total_xp_accumulated(),
@@ -121,8 +123,8 @@ xp_x = XPTable(xp_data=xp_table)
 
 def create_player(name: str, custom_levels: dict, xp_table: XPTable, unspent_xp: int = 0) -> Player:
     full_levels = default_levels.copy()
-    full_levels.update(custom_levels)
-    return Player(name=name, levels=full_levels, xp_table=xp_table, unspent_xp=unspent_xp)
+    full_levels.update(custom_levels))
+       return Player(name=name, levels=full_levels, xp_table=xp_table, max_level=max_level, unspent_xp=unspent_xp)   
 
 
 def main():
@@ -135,6 +137,11 @@ def main():
 
     with st.form("player_form", clear_on_submit=True):
         name = st.text_input("Фамилия/Имя игрока")
+        max_level = st.selectbox(
+            "До какого уровня считать максимум?",
+            options=[37, 40, 50, 60],
+            index=3  # По умолчанию 60
+        )
         levels = {}
         st.write("Уровни характеристик:")
         for stat in default_levels:
@@ -146,7 +153,7 @@ def main():
         submitted = st.form_submit_button("Добавить игрока")
 
         if submitted and name:
-            player = create_player(name, levels.copy(), xp_x, unspent_xp)
+            player = create_player(name, levels.copy(), xp_x, max_level, unspent_xp)
             st.session_state['players'].append(player)
             st.success(f"Добавлен игрок: {name}")
 
