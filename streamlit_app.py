@@ -158,9 +158,8 @@ def main():
         st.dataframe(df)
 
     if st.button("Очистить список игроков"):
-       if st.session_state['players']:  
-           st.session_state['players'] = []
-           st.experimental_rerun()
+       st.session_state['players'] = []
+       st.info("Список очищен!")  # Покажи уведомление для пользователя
 
 if __name__ == "__main__":
     main()
