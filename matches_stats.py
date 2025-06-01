@@ -8,6 +8,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -113,7 +114,11 @@ def main():
     if st.button("Собрать статистику"):
         login = "Мечтатель"
         password = "31#!Baragoz"
-        driver = webdriver.Chrome(ChromeDriverManager().install())
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
         wait = WebDriverWait(driver, 20)
         driver.get("https://11x11.ru/")
         wait.until(EC.presence_of_element_located((By.NAME, "auth_name"))).send_keys(login)
