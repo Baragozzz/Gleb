@@ -6,9 +6,9 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from bs4 import BeautifulSoup
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -24,7 +24,8 @@ def collect_stats_for_profile(profile_url, filter_from, filter_to, driver, compu
     wins = draws = losses = 0
     page_num = 1
     while True:
-        history_url = f"https://11x11.ru/xml/games/history.php?page={page_num}&type=games/history&act=userhistory&user={user_id}"
+        history_url = (f"https://11x11.ru/xml/games/history.php?page={page_num}"
+                       f"&type=games/history&act=userhistory&user={user_id}")
         driver.get(history_url)
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -77,7 +78,8 @@ def get_profiles_from_guild(guild_url, driver):
     profiles = set()
     page = 1
     while True:
-        members_url = f"https://11x11.ru/xml/misc/guilds.php?page={page}&type=misc/guilds&act=members&id={guild_id}"
+        members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={page}"
+                       f"&type=misc/guilds&act=members&id={guild_id}")
         driver.get(members_url)
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -119,7 +121,8 @@ def main():
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.binary_location = "/usr/bin/chromium-browser"
-        driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         wait = WebDriverWait(driver, 20)
         driver.get("https://11x11.ru/")
         wait.until(EC.presence_of_element_located((By.NAME, "auth_name"))).send_keys(login)
