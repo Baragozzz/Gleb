@@ -9,10 +9,10 @@ def main():
     tab1, tab2 = st.tabs(["Статистика матчей", "Ростер игроков"])
 
     with tab1:
-        statistics_page()
+        statistics_page()  # Вызов страницы статистики матчей
 
     with tab2:
-        roster_page()
+        roster_page()  # Вызов страницы роста игроков
 
 if __name__ == "__main__":
     main()
