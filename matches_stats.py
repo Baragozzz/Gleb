@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+from webdriver_manager.chrome import ChromeDriverManager
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -112,7 +113,7 @@ def main():
     if st.button("Собрать статистику"):
         login = "Мечтатель"
         password = "31#!Baragoz"
-        driver = webdriver.Chrome()
+        driver = webdriver.Chrome(ChromeDriverManager().install())
         wait = WebDriverWait(driver, 20)
         driver.get("https://11x11.ru/")
         wait.until(EC.presence_of_element_located((By.NAME, "auth_name"))).send_keys(login)
