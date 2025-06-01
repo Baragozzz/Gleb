@@ -237,7 +237,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     return results
 
 def main():
-    st.title("11x11 Статистика (Асинхронный Playwright, оптимизированное ожидание)")
+    st.title("11x11 Статистика")
     st.write("Приложение запустилось!")
     
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
