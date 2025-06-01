@@ -32,9 +32,8 @@ def statistics_page():
         password = "111333555"
         st.write("🕒 Анализ данных...")
 
-        # 🚀 Запускаем async_main() через asyncio.create_task()
-        future = asyncio.create_task(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
-        results = asyncio.run(future)
+        # 🔧 КОРРЕКТНЫЙ ВЫЗОВ async_main()
+        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
 
         if results:
             df = pd.DataFrame(results)
