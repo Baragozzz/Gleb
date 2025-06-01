@@ -2,9 +2,10 @@ import streamlit as st
 import subprocess
 import re
 import pandas as pd
+import asyncio
 from datetime import datetime
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 # Попытка динамически установить Chromium (если ещё не установлен)
 try:
@@ -13,69 +14,57 @@ except Exception as e:
     st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
-    """
-    Преобразует строку с датой в объект datetime.
-    Формат: "ДД.ММ.ГГГГ ЧЧ:ММ"
-    """
+    """Преобразует строку с датой формата 'ДД.ММ.ГГГГ ЧЧ:ММ' в объект datetime."""
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
 def clean_nickname(raw_text):
     """
-    Извлекает чистое имя пользователя (ник) из строки, где может содержаться шаблон:
-    "Профиль участника Мечтатель - Онлайн игра 11x11" или "Мечтатель – профиль пользователя | 11x11".
-    Функция удаляет стандартные префиксы и постфиксы, оставляя только никнейм.
+    Очищает исходный текст никнейма от нежелательных префиксов и постфиксов.
+    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11" будет возвращено "Мечтатель".
     """
     nickname = raw_text.strip()
-    # Если присутствует шаблон "Профиль участника", удаляем его
     if "Профиль участника" in nickname:
         nickname = nickname.replace("Профиль участника", "").strip()
-    # Пытаемся разделить по разделителям – или -
     if "–" in nickname:
         nickname = nickname.split("–")[0].strip()
     elif "-" in nickname:
         nickname = nickname.split("-")[0].strip()
     return nickname
 
-def get_nickname(page, profile_url):
+async def async_get_nickname(page, profile_url):
     """
     Переходит на страницу профиля и пытается извлечь никнейм.
-    Сначала ищем в теге <title>, затем в теге <h1>.
-    Возвращается только чистый ник, например "Мечтатель".
+    Сначала берётся содержимое тега <title>, откуда через очистку извлекается нужное имя.
+    Если не удалось, пробует взять <h1>.
     """
-    page.goto(profile_url)
+    await page.goto(profile_url)
     try:
-        page.wait_for_load_state("networkidle", timeout=10000)
+        await page.wait_for_load_state("networkidle", timeout=10000)
     except Exception:
         pass
-    html = page.content()
+    html = await page.content()
     soup = BeautifulSoup(html, "html.parser")
     
-    # Попытка извлечь из тега <title>
-    title = soup.find("title")
-    if title:
-        title_text = title.get_text()
+    title_tag = soup.find("title")
+    if title_tag:
+        title_text = title_tag.get_text()
         nickname = clean_nickname(title_text)
         if nickname:
             return nickname
-    
-    # Альтернативно, попробовать взять из <h1>
     h1 = soup.find("h1")
     if h1:
         nickname = clean_nickname(h1.get_text())
         if nickname:
             return nickname
-    
-    # Если ничего не найдено, использовать последний компонент URL
     return profile_url.split("/")[-1]
 
-def collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
+async def async_collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
     """
-    Собирает статистику игр для данного профиля.
-    Если статистика уже была посчитана (по user_id), возвращается кэшированное значение.
+    Асинхронно собирает статистику (победы, ничьи, поражения) для профиля.
+    Если статистика для данного user_id уже посчитана, используется кэш.
     """
     user_id_match = re.search(r'/users/(\d+)', profile_url)
     if not user_id_match:
-        st.write(f"Неверный URL профиля: {profile_url}")
         return (0, 0, 0)
     user_id = user_id_match.group(1)
     if user_id in computed_stats:
@@ -86,12 +75,12 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
     while True:
         history_url = (f"https://11x11.ru/xml/games/history.php?page={page_num}"
                        f"&type=games/history&act=userhistory&user={user_id}")
-        page.goto(history_url)
+        await page.goto(history_url)
         try:
-            page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass
-        html = page.content()
+        html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         rows = soup.find_all("tr")
         if not rows:
@@ -120,7 +109,6 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
             b_tag = center.find("b")
             if b_tag and b_tag.find("a"):
                 href = b_tag.find("a")["href"]
-                # Если найденная ссылка содержит id данного пользователя – победа, иначе поражение
                 if user_id in href:
                     result = "Win"
                 else:
@@ -137,15 +125,13 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
     computed_stats[user_id] = (wins, draws, losses)
     return wins, draws, losses
 
-def get_profiles_from_guild(page, guild_url):
+async def async_get_profiles_from_guild(page, guild_url):
     """
-    Получает список членов союза.
-    Для каждого найденного элемента <a> возвращается кортеж (URL профиля, nickname),
-    где nickname извлекается из текста ссылки и очищается.
+    Асинхронно получает список участников союза.
+    Для каждого найденного профиля возвращается кортеж (profile_url, nickname).
     """
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
-        st.write("Неверный URL союза.")
         return []
     guild_id = guild_id_match.group(1)
     profiles = set()
@@ -153,12 +139,12 @@ def get_profiles_from_guild(page, guild_url):
     while True:
         members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}"
                        f"&type=misc/guilds&act=members&id={guild_id}")
-        page.goto(members_url)
+        await page.goto(members_url)
         try:
-            page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass
-        html = page.content()
+        html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         new_profiles = set()
         for a in soup.find_all("a", href=True):
@@ -174,14 +160,84 @@ def get_profiles_from_guild(page, guild_url):
         pagenum += 1
     return list(profiles)
 
+async def process_profile(context, profile_url, filter_from, filter_to, computed_stats):
+    """
+    Для данного профиля открывает новую вкладку (page), собирает никнейм и статистику, затем закрывает вкладку.
+    Возвращает кортеж (profile_url, nickname, wins, draws, losses).
+    """
+    page = await context.new_page()
+    nickname = await async_get_nickname(page, profile_url)
+    wins, draws, losses = await async_collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats)
+    await page.close()
+    return profile_url, nickname, wins, draws, losses
+
+async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
+    computed_stats = {}
+    results = []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        # Открываем основную страницу для авторизации и получения списка участников
+        page = await context.new_page()
+        await page.goto("https://11x11.ru/")
+        await page.fill("input[name='auth_name']", login)
+        await page.fill("input[name='auth_pass1']", password)
+        await page.click("xpath=//input[@type='submit' and @value='Войти']")
+        await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
+        
+        if mode_choice == "Профилю":
+            # Обработка одного профиля
+            profile_url, nickname, wins, draws, losses = await process_profile(context, target_url, filter_from, filter_to, computed_stats)
+            results.append({
+                "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
+                "Побед": wins,
+                "Ничьих": draws,
+                "Поражений": losses
+            })
+        else:
+            # Получаем список участников союза
+            profile_tuples = await async_get_profiles_from_guild(page, target_url)
+            if not profile_tuples:
+                await page.close()
+                await context.close()
+                await browser.close()
+                return []
+            # Ограничиваем конкуренцию (например, 10 параллельных задач)
+            semaphore = asyncio.Semaphore(10)
+            async def sem_process(profile_url):
+                async with semaphore:
+                    return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
+            tasks = [sem_process(profile_url) for (profile_url, _) in profile_tuples]
+            profiles_results = await asyncio.gather(*tasks)
+            total_wins = total_draws = total_losses = 0
+            for (profile_url, nickname, wins, draws, losses) in profiles_results:
+                total_wins += wins
+                total_draws += draws
+                total_losses += losses
+                results.append({
+                    "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
+                    "Побед": wins,
+                    "Ничьих": draws,
+                    "Поражений": losses
+                })
+            results.append({
+                "Профиль": "<b>Итого</b>",
+                "Побед": total_wins,
+                "Ничьих": total_draws,
+                "Поражений": total_losses
+            })
+            await page.close()
+        await context.close()
+        await browser.close()
+    return results
+
 def main():
-    st.title("11x11 Статистика (Playwright)")
+    st.title("11x11 Статистика (Асинхронный Playwright)")
     st.write("Приложение запустилось!")
     
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
     
-    # Определяем диапазон дат
     if period_mode == "День":
         day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
         year = datetime.now().year
@@ -197,74 +253,16 @@ def main():
         target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
     else:
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
-        
+    
     if st.button("Собрать статистику"):
-        # Новые данные для входа:
         login = "лао"
         password = "111333555"
-        
-        computed_stats = {}
-        results = []  # Список для хранения результатов
-        table_placeholder = st.empty()  # Контейнер для динамического обновления таблицы
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-            
-            # Авторизация на сайте
-            page.goto("https://11x11.ru/")
-            page.fill("input[name='auth_name']", login)
-            page.fill("input[name='auth_pass1']", password)
-            page.click("xpath=//input[@type='submit' and @value='Войти']")
-            page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
-            
-            if mode_choice == "Профилю":
-                # Для одиночного профиля – получаем ник через get_nickname
-                nickname = get_nickname(page, target_url)
-                wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
-                # Здесь выводится только чистый ник (без лишних данных) в качестве ссылки
-                profile_link = f'<a href="{target_url}" target="_blank">{nickname}</a>'
-                results.append({
-                    "Профиль": profile_link,
-                    "Побед": wins,
-                    "Ничьих": draws,
-                    "Поражений": losses
-                })
-                df = pd.DataFrame(results)
-                table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-            else:
-                # Для режима "Союз" получаем список членов
-                profile_tuples = get_profiles_from_guild(page, target_url)
-                if not profile_tuples:
-                    st.write("Не удалось получить профили из союза.")
-                else:
-                    total_wins = total_draws = total_losses = 0
-                    for (url, member_nick) in profile_tuples:
-                        wins, draws, losses = collect_stats_for_profile(page, url, filter_from, filter_to, computed_stats)
-                        total_wins += wins
-                        total_draws += draws
-                        total_losses += losses
-                        profile_link = f'<a href="{url}" target="_blank">{member_nick}</a>'
-                        results.append({
-                            "Профиль": profile_link,
-                            "Побед": wins,
-                            "Ничьих": draws,
-                            "Поражений": losses
-                        })
-                        df = pd.DataFrame(results)
-                        table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-                    # Добавляем итоговую строку
-                    results.append({
-                        "Профиль": "<b>Итого</b>",
-                        "Побед": total_wins,
-                        "Ничьих": total_draws,
-                        "Поражений": total_losses
-                    })
-                    df = pd.DataFrame(results)
-                    table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-            context.close()
-            browser.close()
+        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        if results:
+            df = pd.DataFrame(results)
+            st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        else:
+            st.write("Нет результатов.")
 
 if __name__ == "__main__":
     main()
