@@ -2,9 +2,9 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from datetime import datetime
-from utils.data_processing import async_main  # Импорт вашей логики
+from utils.data_processing import async_main  # Импорт async_main()
 
-async def statistics_page():
+def statistics_page():
     """Страница статистики матчей"""
     st.subheader("Статистика матчей")
 
@@ -32,9 +32,11 @@ async def statistics_page():
         password = "111333555"
         st.write("🕒 Анализ данных...")
 
-        # 🔧 Теперь используем await async_main()
-        results = await async_main(mode_choice, target_url, filter_from, filter_to, login, password)
+        # Запуск async_main()
+        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
 
+        st.write("📊 Полученные данные:", results)  # Проверяем, что results не пустой
+        
         if results:
             df = pd.DataFrame(results)
             st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
