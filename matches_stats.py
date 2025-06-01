@@ -9,6 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -21,9 +22,7 @@ def collect_stats_for_profile(profile_url, filter_from, filter_to, driver, compu
     user_id = user_id_match.group(1)
     if user_id in computed_stats:
         return computed_stats[user_id]
-    wins = 0
-    draws = 0
-    losses = 0
+    wins = draws = losses = 0
     page_num = 1
     while True:
         history_url = f"https://11x11.ru/xml/games/history.php?page={page_num}&type=games/history&act=userhistory&user={user_id}"
@@ -118,7 +117,7 @@ def main():
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         wait = WebDriverWait(driver, 20)
         driver.get("https://11x11.ru/")
         wait.until(EC.presence_of_element_located((By.NAME, "auth_name"))).send_keys(login)
