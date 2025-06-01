@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from datetime import datetime
-from utils.data_processing import async_main  # Импорт async_main
+from utils.data_processing import async_main  # Импорт вашей логики
 
 def statistics_page():
     """Страница статистики матчей"""
@@ -32,9 +32,9 @@ def statistics_page():
         password = "111333555"
         st.write("🕒 Анализ данных...")
 
-        # КОРРЕКТНЫЙ ВЫЗОВ async_main() через event loop
-        loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        # 🚀 Запускаем async_main() через asyncio.create_task()
+        future = asyncio.create_task(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        results = asyncio.run(future)
 
         if results:
             df = pd.DataFrame(results)
