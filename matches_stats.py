@@ -25,7 +25,8 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
     wins = draws = losses = 0
     page_num = 1
     while True:
-        history_url = f"https://11x11.ru/xml/games/history.php?page={page_num}&type=games/history&act=userhistory&user={user_id}"
+        history_url = (f"https://11x11.ru/xml/games/history.php?page={page_num}"
+                       f"&type=games/history&act=userhistory&user={user_id}")
         page.goto(history_url)
         try:
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -85,7 +86,8 @@ def get_profiles_from_guild(page, guild_url):
     profiles = set()
     pagenum = 1
     while True:
-        members_url = f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}&type=misc/guilds&act=members&id={guild_id}"
+        members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}"
+                       f"&type=misc/guilds&act=members&id={guild_id}")
         page.goto(members_url)
         try:
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -107,6 +109,7 @@ def main():
     st.title("11x11 Статистика (Playwright)")
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
+    
     if period_mode == "День":
         day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
         year = datetime.now().year
@@ -124,18 +127,19 @@ def main():
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
         
     if st.button("Собрать статистику"):
+        # Новые данные для входа:
         login = "лао"
         password = "111333555"
-        computed_stats = {}
-        results = []  # Список для хранения результатов каждого профиля
         
-        # Контейнер для вывода таблицы
+        computed_stats = {}
+        results = []  # Для хранения результатов каждого профиля
+        
+        # Контейнер для обновления таблицы
         table_placeholder = st.empty()
         
         with sync_playwright() as p:
-            # Запускаем Chromium с явным указанием пути к бинарнику,
-            # убедитесь, что путь соответствует установленному на вашей платформе (Streamlit Cloud)
-            browser = p.chromium.launch(headless=True, executable_path="/usr/bin/chromium-browser")
+            # Запускаем Chromium в headless‑режиме без явного указания пути к бинарнику
+            browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
             page.goto("https://11x11.ru/")
