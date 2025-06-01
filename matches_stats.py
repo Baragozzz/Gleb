@@ -13,16 +13,15 @@ except Exception as e:
     st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
-    """
-    Преобразует строку с датой в объект datetime.
-    Формат: "ДД.ММ.ГГГГ ЧЧ:ММ"
-    """
+    """Преобразует строку с датой в объект datetime с форматом 'ДД.ММ.ГГГГ ЧЧ:ММ'."""
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
 def get_nickname(page, profile_url):
     """
-    Переходит на страницу профиля и пытается извлечь никнейм, используя <h1>.
-    Если не находит, возвращает последний компонент URL.
+    Переходит на страницу профиля и пытается извлечь никнейм.
+    Сначала ищем в теге <title>, разделяя по разделителю «–».
+    Если не найдено, берем содержимое тега <h1>.
+    Если и это не работает, возвращается последний компонент URL.
     """
     page.goto(profile_url)
     try:
@@ -31,16 +30,28 @@ def get_nickname(page, profile_url):
         pass
     html = page.content()
     soup = BeautifulSoup(html, "html.parser")
+    
+    # Попытка извлечь никнейм из заголовка страницы (<title>)
+    title = soup.find("title")
+    if title:
+        title_text = title.get_text()
+        # Предположим, что заголовок имеет формат "Никнейм – прочее ..."
+        nickname = title_text.split("–")[0].strip()
+        if nickname:
+            return nickname
+    
+    # Альтернативный способ: тег <h1>
     h1 = soup.find("h1")
     if h1 and h1.get_text(strip=True):
         return h1.get_text(strip=True)
-    else:
-        return profile_url.split("/")[-1]
+    
+    # Если ничего не найдено, возвращаем последний компонент URL
+    return profile_url.split("/")[-1]
 
 def collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
     """
     Собирает статистику игр для данного профиля.
-    Если статистика уже была посчитана (по user_id), возвращает кэшированное значение.
+    Если статистика уже была посчитана (по user_id), возвращается кэшированное значение.
     """
     user_id_match = re.search(r'/users/(\d+)', profile_url)
     if not user_id_match:
@@ -49,6 +60,7 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
     user_id = user_id_match.group(1)
     if user_id in computed_stats:
         return computed_stats[user_id]
+    
     wins = draws = losses = 0
     page_num = 1
     while True:
@@ -107,7 +119,8 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
 def get_profiles_from_guild(page, guild_url):
     """
     Получает список членов союза.
-    Из каждого найденного элемента <a> извлекает кортеж (URL профиля, nickname).
+    Для каждого найденного элемента <a> возвращается кортеж (URL профиля, nickname),
+    где nickname берётся из текста ссылки.
     """
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
@@ -133,7 +146,7 @@ def get_profiles_from_guild(page, guild_url):
                 nickname = a.get_text(strip=True)
                 if not nickname:
                     nickname = profile_url.split("/")[-1]
-                new_profiles.add( (profile_url, nickname) )
+                new_profiles.add((profile_url, nickname))
         if not new_profiles:
             break
         profiles.update(new_profiles)
@@ -142,6 +155,7 @@ def get_profiles_from_guild(page, guild_url):
 
 def main():
     st.title("11x11 Статистика (Playwright)")
+    st.write("Приложение запустилось!")  # Отладочное сообщение
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
     
@@ -157,37 +171,34 @@ def main():
         filter_from = datetime.strptime(dt_from, "%d.%m.%Y %H:%M")
         filter_to = datetime.strptime(dt_to, "%d.%m.%Y %H:%M")
         
-    # Ввод URL
     if mode_choice == "Профилю":
         target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
     else:
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
         
     if st.button("Собрать статистику"):
-        # Используем новые данные для входа:
+        # Новые данные для входа:
         login = "лао"
         password = "111333555"
         
         computed_stats = {}
         results = []  # Список для хранения результатов
-        # Контейнер для динамического обновления таблицы
-        table_placeholder = st.empty()
+        table_placeholder = st.empty()  # Контейнер для обновления таблицы динамически
         
         with sync_playwright() as p:
-            # Запускаем Chromium в headless‑режиме без указания executable_path
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True)  # Без указания executable_path
             context = browser.new_context()
             page = context.new_page()
             
-            # Вход на сайт
+            # Авторизация на сайте
             page.goto("https://11x11.ru/")
             page.fill("input[name='auth_name']", login)
             page.fill("input[name='auth_pass1']", password)
             page.click("xpath=//input[@type='submit' and @value='Войти']")
             page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
             
-            # Режим "Профилю": обрабатываем один профиль
             if mode_choice == "Профилю":
+                # Для одиночного профиля получаем никнейм с помощью get_nickname
                 nickname = get_nickname(page, target_url)
                 wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
                 profile_link = f'<a href="{target_url}" target="_blank">{nickname}</a>'
@@ -197,11 +208,10 @@ def main():
                     "Ничьих": draws,
                     "Поражений": losses
                 })
-                # Выводим HTML-таблицу с гиперссылками
                 df = pd.DataFrame(results)
                 table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
             else:
-                # Режим "Союз": получаем список членов союза
+                # Для Союза получаем список членов
                 profile_tuples = get_profiles_from_guild(page, target_url)
                 if not profile_tuples:
                     st.write("Не удалось получить профили из союза.")
@@ -219,10 +229,8 @@ def main():
                             "Ничьих": draws,
                             "Поражений": losses
                         })
-                        # Обновляем таблицу после каждого профиля
                         df = pd.DataFrame(results)
                         table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-                    # Добавляем итоговую строку
                     results.append({
                         "Профиль": "<b>Итого</b>",
                         "Побед": total_wins,
