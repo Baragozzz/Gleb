@@ -2,40 +2,36 @@ import asyncio
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import streamlit as st  # ✅ Добавляем для проверки!
 
 async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
     """Асинхронная обработка статистики матчей"""
 
-    # 🔹 Авторизация (если требуется)
     session = requests.Session()
     auth_url = "https://11x11.ru/login"
     auth_data = {"login": login, "password": password}
     session.post(auth_url, data=auth_data)
 
-    # 🔹 Запрос данных со страницы
     response = session.get(target_url)
     if response.status_code != 200:
-        print("❌ Ошибка загрузки страницы:", response.status_code)
+        st.write("❌ Ошибка загрузки страницы:", response.status_code)
         return []
 
-    print("✅ Загружена страница:", response.text[:500])  # Проверяем первые 500 символов HTML
+    st.write("✅ Загружена страница:", response.text[:500])  # ✅ Выводим первые 500 символов HTML
 
-    # 🔹 Парсинг страницы
     soup = BeautifulSoup(response.text, "html.parser")
     
-    # 🔹 Поиск информации по матчам
     matches_data = []
-    matches = soup.find_all("div", class_="match-row")  # Замените на реальный HTML-класс
+    matches = soup.find_all("div", class_="match-row")  # ✅ Выводим найденные матчи!
     
-    print("📊 Найдено матчей:", len(matches))  # Проверяем, сколько матчей найдено
+    st.write("📊 Найдено матчей:", len(matches))  # ✅ Проверяем количество матчей
 
     for match in matches:
-        date_str = match.find("span", class_="match-date").text.strip()  # Замените на реальный HTML-класс
+        date_str = match.find("span", class_="match-date").text.strip()  # ✅ Проверяем дату!
         match_date = datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
-        print("📅 Матч:", match_date, "| Фильтр:", filter_from, "-", filter_to)  # Проверяем даты
+        st.write("📅 Матч:", match_date, "| Фильтр:", filter_from, "-", filter_to)  # ✅ Проверяем даты
 
-        # 🔹 Фильтр по выбранному диапазону дат
         if filter_from <= match_date <= filter_to:
             player = match.find("span", class_="player-name").text.strip()
             result = match.find("span", class_="match-result").text.strip()
@@ -46,6 +42,6 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 "Результат": result,
             })
 
-    print("✅ Итоговые данные:", matches_data)  # Проверяем, что парсинг работает
+    st.write("✅ Итоговые данные:", matches_data)  # ✅ Финальный вывод
 
-    return matches_data  # Возвращаем обработанные данные
+    return matches_data
