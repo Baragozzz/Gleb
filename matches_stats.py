@@ -20,7 +20,7 @@ def parse_date(date_str):
 def clean_nickname(raw_text):
     """
     Очищает текст никнейма.
-    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11" возвращает "Мечтатель".
+    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11" возвращается "Мечтатель".
     """
     nickname = raw_text.strip()
     if "Профиль участника" in nickname:
@@ -38,17 +38,14 @@ async def async_get_nickname(page, profile_url):
     Если загрузка не успешна (таймаут), возвращается последний компонент URL.
     """
     try:
-        # Увеличиваем таймаут до 15000 мс
-        await page.goto(profile_url, timeout=15000)
-    except TimeoutError as e:
-        st.write(f"Timeout при загрузке профиля {profile_url}: {e}")
+        await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
+    except TimeoutError:
+        # Если по истечении времени страница не загрузилась, возвращаем fallback без вывода сообщения
         return profile_url.split("/")[-1]
-    except Exception as e:
-        st.write(f"Ошибка при загрузке профиля {profile_url}: {e}")
+    except Exception:
         return profile_url.split("/")[-1]
     
     try:
-        # Ждем появления элемента <h1> в течение 10000 мс
         await page.wait_for_selector("h1", timeout=10000)
     except Exception:
         pass
@@ -89,11 +86,10 @@ async def async_collect_stats_for_profile(page, profile_url, filter_from, filter
             f"&type=games/history&act=userhistory&user={user_id}"
         )
         try:
-            await page.goto(history_url, timeout=15000)
+            await page.goto(history_url, timeout=15000, wait_until="domcontentloaded")
         except Exception:
             break
         try:
-            # Ждем появления хотя бы одной строки таблицы истории в течение 10000 мс
             await page.wait_for_selector("tr", timeout=10000)
         except Exception:
             pass
@@ -161,11 +157,10 @@ async def async_get_profiles_from_guild(page, guild_url):
             f"&type=misc/guilds&act=members&id={guild_id}"
         )
         try:
-            await page.goto(members_url, timeout=15000)
+            await page.goto(members_url, timeout=15000, wait_until="domcontentloaded")
         except Exception:
             break
         try:
-            # Ждем появления ссылок на пользователей в течение 10000 мс
             await page.wait_for_selector("a[href^='/users/']", timeout=10000)
         except Exception:
             pass
@@ -207,7 +202,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
         # Страница для авторизации (и получения списка участников, если режим "Союз")
         page = await context.new_page()
         try:
-            await page.goto("https://11x11.ru/", timeout=15000)
+            await page.goto("https://11x11.ru/", timeout=15000, wait_until="domcontentloaded")
         except Exception:
             st.write("Ошибка загрузки главной страницы")
             return []
@@ -241,11 +236,10 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
             tasks = [sem_process(profile_url) for (profile_url, _) in profile_tuples]
             profiles_results = await asyncio.gather(*tasks)
-            total_wins = total_draws = total_losses = 0
+            # Подсчитываем количество игроков, сыгравших хотя бы одну игру, и не сыгравших
+            active_count = sum(1 for (_, _, wins, draws, losses) in profiles_results if (wins + draws + losses) > 0)
+            inactive_count = len(profiles_results) - active_count
             for (profile_url, nickname, wins, draws, losses) in profiles_results:
-                total_wins += wins
-                total_draws += draws
-                total_losses += losses
                 results.append({
                     "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
                     "Побед": wins,
@@ -254,9 +248,9 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 })
             results.append({
                 "Профиль": "<b>Итого</b>",
-                "Побед": total_wins,
-                "Ничьих": total_draws,
-                "Поражений": total_losses
+                "Побед": active_count,      # Игравших
+                "Ничьих": inactive_count,    # Не игравших
+                "Поражений": ""
             })
             await page.close()
         await context.close()
