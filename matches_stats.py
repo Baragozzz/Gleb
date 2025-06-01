@@ -2,18 +2,13 @@ import streamlit as st
 import time, re
 from datetime import datetime
 from collections import defaultdict
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from playwright.sync_api import sync_playwright
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
-def collect_stats_for_profile(profile_url, filter_from, filter_to, driver, computed_stats):
+def collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
     user_id_match = re.search(r'/users/(\d+)', profile_url)
     if not user_id_match:
         st.write(f"Неверный URL профиля: {profile_url}")
@@ -26,9 +21,10 @@ def collect_stats_for_profile(profile_url, filter_from, filter_to, driver, compu
     while True:
         history_url = (f"https://11x11.ru/xml/games/history.php?page={page_num}"
                        f"&type=games/history&act=userhistory&user={user_id}")
-        driver.get(history_url)
+        page.goto(history_url)
         time.sleep(2)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
         found_match = False
         stop = False
         for row in soup.find_all("tr"):
@@ -69,20 +65,21 @@ def collect_stats_for_profile(profile_url, filter_from, filter_to, driver, compu
     computed_stats[user_id] = (wins, draws, losses)
     return wins, draws, losses
 
-def get_profiles_from_guild(guild_url, driver):
+def get_profiles_from_guild(page, guild_url):
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
         st.write("Неверный URL союза.")
         return []
     guild_id = guild_id_match.group(1)
     profiles = set()
-    page = 1
+    pagenum = 1
     while True:
-        members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={page}"
+        members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}"
                        f"&type=misc/guilds&act=members&id={guild_id}")
-        driver.get(members_url)
+        page.goto(members_url)
         time.sleep(2)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
         new_profiles = set()
         for a in soup.find_all("a", href=True):
             if re.match(r"^/users/\d+", a["href"]):
@@ -90,11 +87,11 @@ def get_profiles_from_guild(guild_url, driver):
         if not new_profiles:
             break
         profiles.update(new_profiles)
-        page += 1
+        pagenum += 1
     return list(profiles)
 
 def main():
-    st.title("11x11 Статистика")
+    st.title("11x11 Статистика (Playwright)")
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
     if period_mode == "День":
@@ -114,46 +111,41 @@ def main():
     if st.button("Собрать статистику"):
         login = "Мечтатель"
         password = "31#!Baragoz"
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.binary_location = "/usr/bin/chromium-browser"
-        service = Service("/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        wait = WebDriverWait(driver, 20)
-        driver.get("https://11x11.ru/")
-        wait.until(EC.presence_of_element_located((By.NAME, "auth_name"))).send_keys(login)
-        driver.find_element(By.NAME, "auth_pass1").send_keys(password)
-        driver.find_element(By.XPATH, '//input[@type="submit" and @value="Войти"]').click()
-        wait.until(EC.presence_of_element_located((By.XPATH, '//a[contains(text(), "Выход")]')))
         computed_stats = {}
-        if mode_choice == "Профилю":
-            wins, draws, losses = collect_stats_for_profile(target_url, filter_from, filter_to, driver, computed_stats)
-            st.write("Профиль:", target_url)
-            st.write("Побед:", wins)
-            st.write("Ничьих:", draws)
-            st.write("Поражений:", losses)
-        else:
-            profile_urls = get_profiles_from_guild(target_url, driver)
-            if not profile_urls:
-                st.write("Не удалось получить профили из союза.")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto("https://11x11.ru/")
+            page.fill("input[name='auth_name']", login)
+            page.fill("input[name='auth_pass1']", password)
+            page.click("xpath=//input[@type='submit' and @value='Войти']")
+            page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
+            if mode_choice == "Профилю":
+                wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
+                st.write("Профиль:", target_url)
+                st.write("Побед:", wins)
+                st.write("Ничьих:", draws)
+                st.write("Поражений:", losses)
             else:
-                total_wins = total_draws = total_losses = 0
-                st.write("Найдено профилей:", len(profile_urls))
-                for url in profile_urls:
-                    wins, draws, losses = collect_stats_for_profile(url, filter_from, filter_to, driver, computed_stats)
-                    st.write("Профиль:", url, "Побед:", wins, "Ничьих:", draws, "Поражений:", losses)
-                    total_wins += wins
-                    total_draws += draws
-                    total_losses += losses
-                st.write("Общая статистика по союзу:")
-                st.write("Побед:", total_wins)
-                st.write("Ничьих:", total_draws)
-                st.write("Поражений:", total_losses)
-        driver.quit()
+                profile_urls = get_profiles_from_guild(page, target_url)
+                if not profile_urls:
+                    st.write("Не удалось получить профили из союза.")
+                else:
+                    total_wins = total_draws = total_losses = 0
+                    st.write("Найдено профилей:", len(profile_urls))
+                    for url in profile_urls:
+                        wins, draws, losses = collect_stats_for_profile(page, url, filter_from, filter_to, computed_stats)
+                        st.write("Профиль:", url, "Побед:", wins, "Ничьих:", draws, "Поражений:", losses)
+                        total_wins += wins
+                        total_draws += draws
+                        total_losses += losses
+                    st.write("Общая статистика по союзу:")
+                    st.write("Побед:", total_wins)
+                    st.write("Ничьих:", total_draws)
+                    st.write("Поражений:", total_losses)
+            context.close()
+            browser.close()
 
 if __name__ == "__main__":
     main()
