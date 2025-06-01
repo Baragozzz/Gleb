@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, TimeoutError
+from utils.data_processing import async_get_nickname, async_collect_stats_for_profile
+
 
 # Попытка установки Chromium (если ещё не установлен)
 try:
