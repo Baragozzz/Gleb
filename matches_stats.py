@@ -13,12 +13,16 @@ except Exception as e:
     st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
+    """
+    Преобразует строку с датой в объект datetime.
+    Формат: "ДД.ММ.ГГГГ ЧЧ:ММ"
+    """
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
 def get_nickname(page, profile_url):
     """
-    Переход на страницу профиля и извлечение никнейма.
-    Если не удаётся найти никнейм в теге <h1>, то возвращается последний компонент URL.
+    Переходит на страницу профиля и пытается извлечь никнейм, используя <h1>.
+    Если не находит, возвращает последний компонент URL.
     """
     page.goto(profile_url)
     try:
@@ -27,7 +31,6 @@ def get_nickname(page, profile_url):
         pass
     html = page.content()
     soup = BeautifulSoup(html, "html.parser")
-    # Попытка найти никнейм в <h1>
     h1 = soup.find("h1")
     if h1 and h1.get_text(strip=True):
         return h1.get_text(strip=True)
@@ -36,8 +39,8 @@ def get_nickname(page, profile_url):
 
 def collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
     """
-    Считывает статистику (победы, ничьи, поражения) для профиля по истории игр.
-    Используется кэш computed_stats, чтобы избежать повторного подсчёта для одного и того же профиля.
+    Собирает статистику игр для данного профиля.
+    Если статистика уже была посчитана (по user_id), возвращает кэшированное значение.
     """
     user_id_match = re.search(r'/users/(\d+)', profile_url)
     if not user_id_match:
@@ -104,8 +107,7 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
 def get_profiles_from_guild(page, guild_url):
     """
     Получает список членов союза.
-    Из каждого найденного элемента <a>, соответствующего пользователю, извлекается пара:
-    (URL профиля, никнейм) – текст ссылки считается никнеймом.
+    Из каждого найденного элемента <a> извлекает кортеж (URL профиля, nickname).
     """
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
@@ -130,7 +132,6 @@ def get_profiles_from_guild(page, guild_url):
                 profile_url = "https://11x11.ru" + a["href"]
                 nickname = a.get_text(strip=True)
                 if not nickname:
-                    # Если текст ссылки пуст, возьмем часть URL
                     nickname = profile_url.split("/")[-1]
                 new_profiles.add( (profile_url, nickname) )
         if not new_profiles:
@@ -144,6 +145,7 @@ def main():
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
     
+    # Определяем диапазон дат
     if period_mode == "День":
         day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
         year = datetime.now().year
@@ -155,35 +157,36 @@ def main():
         filter_from = datetime.strptime(dt_from, "%d.%m.%Y %H:%M")
         filter_to = datetime.strptime(dt_to, "%d.%m.%Y %H:%M")
         
+    # Ввод URL
     if mode_choice == "Профилю":
         target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
     else:
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
         
     if st.button("Собрать статистику"):
-        # Новые данные для входа:
+        # Используем новые данные для входа:
         login = "лао"
         password = "111333555"
         
         computed_stats = {}
-        results = []  # Список для хранения результатов каждого профиля
-        computed_nicknames = {}  # Для кэширования никнеймов (если потребуется)
-        
-        # Контейнер для обновления таблицы
+        results = []  # Список для хранения результатов
+        # Контейнер для динамического обновления таблицы
         table_placeholder = st.empty()
         
         with sync_playwright() as p:
-            # Запускаем Chromium в headless‑режиме (без параметра executable_path)
+            # Запускаем Chromium в headless‑режиме без указания executable_path
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
+            
+            # Вход на сайт
             page.goto("https://11x11.ru/")
             page.fill("input[name='auth_name']", login)
             page.fill("input[name='auth_pass1']", password)
             page.click("xpath=//input[@type='submit' and @value='Войти']")
             page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
             
-            # Если выбран режим "Профилю" – обрабатываем один профиль
+            # Режим "Профилю": обрабатываем один профиль
             if mode_choice == "Профилю":
                 nickname = get_nickname(page, target_url)
                 wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
@@ -194,11 +197,11 @@ def main():
                     "Ничьих": draws,
                     "Поражений": losses
                 })
-                # Выводим таблицу с гиперссылками через HTML
+                # Выводим HTML-таблицу с гиперссылками
                 df = pd.DataFrame(results)
                 table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
             else:
-                # Режим "Союз": получаем список членов
+                # Режим "Союз": получаем список членов союза
                 profile_tuples = get_profiles_from_guild(page, target_url)
                 if not profile_tuples:
                     st.write("Не удалось получить профили из союза.")
@@ -216,7 +219,7 @@ def main():
                             "Ничьих": draws,
                             "Поражений": losses
                         })
-                        # Обновляем таблицу после обработки каждого профиля
+                        # Обновляем таблицу после каждого профиля
                         df = pd.DataFrame(results)
                         table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
                     # Добавляем итоговую строку
