@@ -6,8 +6,11 @@ from collections import defaultdict
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-# Устанавливаем Chromium (если не установлен)
-subprocess.run(["playwright", "install", "chromium"], check=True)
+# Попытка динамически установить Chromium при запуске
+try:
+    subprocess.run(["playwright", "install", "chromium"], check=True)
+except Exception as e:
+    st.write("Ошибка установки Chromium:", e)
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -152,5 +155,4 @@ def main():
             browser.close()
 
 if __name__ == "__main__":
-    from playwright.sync_api import sync_playwright
     main()
