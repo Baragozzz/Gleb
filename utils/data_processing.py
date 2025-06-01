@@ -6,7 +6,7 @@ import streamlit as st
 from playwright.async_api import async_playwright, TimeoutError
 
 async def async_get_nickname(page, profile_url):
-    """Получает никнейм пользователя по ссылке профиля"""
+    """Получает никнейм пользователя по ссылке профиля."""
     try:
         await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
     except TimeoutError:
@@ -35,7 +35,7 @@ async def async_get_nickname(page, profile_url):
     return profile_url.split("/")[-1]
 
 async def async_collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
-    """Собирает статистику матчей профиля: победы, ничьи, поражения"""
+    """Собирает статистику матчей профиля: победы, ничьи, поражения."""
     user_id_match = re.search(r'/users/(\d+)', profile_url)
     if not user_id_match:
         return (0, 0, 0)
@@ -96,7 +96,7 @@ async def async_collect_stats_for_profile(page, profile_url, filter_from, filter
     return wins, draws, losses
 
 async def process_profile(context, profile_url, filter_from, filter_to, computed_stats):
-    """Создаёт новую вкладку для профиля, получает ник и статистику"""
+    """Создаёт новую вкладку для профиля, получает ник и статистику."""
     page = await context.new_page()
     nickname = await async_get_nickname(page, profile_url)
     wins, draws, losses = await async_collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats)
@@ -104,7 +104,7 @@ async def process_profile(context, profile_url, filter_from, filter_to, computed
     return profile_url, nickname, wins, draws, losses
 
 async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
-    """Асинхронно собирает статистику матчей"""
+    """Асинхронно собирает статистику матчей."""
     computed_stats = {}
     results = []
 
@@ -128,11 +128,11 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 "Поражений": losses
             })
         else:
+            profile_urls = []
             guild_id_match = re.search(r'/guilds/(\d+)', target_url)
             if not guild_id_match:
                 return []
 
-            profile_urls = []
             guild_id = guild_id_match.group(1)
             page_num = 1
 
@@ -155,7 +155,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
 
             profiles_results = await asyncio.gather(*[sem_process(url) for url in profile_urls])
-            dedup = {re.search(r'/users/(\d+)', pr[0]).group(1): pr for pr in profiles_results if re.search(r'/users/(\d+)', pr[0])}
+            dedup = {re.search(r'/users/(\d+)', pr[0]).group(1): pr for pr in profiles_results if re.search(r'/users/\d+', pr[0])}
             profiles_results = dedup.values()
 
             total_players = len(profiles_results)
