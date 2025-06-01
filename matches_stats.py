@@ -20,7 +20,8 @@ def parse_date(date_str):
 def clean_nickname(raw_text):
     """
     Очищает текст никнейма.
-    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11" возвращается "Мечтатель".
+    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11"
+    возвращается "Мечтатель".
     """
     nickname = raw_text.strip()
     if "Профиль участника" in nickname:
@@ -237,7 +238,8 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
             tasks = [sem_process(profile_url) for (profile_url, _) in profile_tuples]
             profiles_results = await asyncio.gather(*tasks)
-            # Фильтрация и дедупликация по user_id; пропускаем записи с ником "Профиль"
+            # Фильтрация и дедупликация по user_id; исключаем записи,
+            # у которых никнейм равен "Профиль" или "лао" (сравнение без учета регистра)
             dedup = {}
             for pr in profiles_results:
                 profile_url, nickname, wins, draws, losses = pr
@@ -245,7 +247,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 if not match:
                     continue
                 user_id = match.group(1)
-                if nickname == "Профиль":
+                if nickname.strip().lower() in ["профиль", "лао"]:
                     continue
                 dedup[user_id] = (profile_url, nickname, wins, draws, losses)
             profiles_results = list(dedup.values())
