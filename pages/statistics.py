@@ -2,17 +2,15 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from datetime import datetime
-from matches_stats import async_main  # Подключение вашей существующей логики
+from utils.data_processing import async_main  # Теперь импортируем из utils
 
 def statistics_page():
-    """Полностью восстановленная страница статистики матчей"""
+    """Страница статистики матчей"""
     st.subheader("Статистика матчей")
 
-    # Выбор режима: профиль или союз (как раньше)
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
 
-    # Выбор даты или диапазона дат (как раньше)
     if period_mode == "День":
         day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
         year = datetime.now().year
@@ -24,7 +22,6 @@ def statistics_page():
         filter_from = datetime.strptime(dt_from, "%d.%m.%Y %H:%M")
         filter_to = datetime.strptime(dt_to, "%d.%m.%Y %H:%M")
 
-    # Ввод URL профиля или союза (как раньше)
     if mode_choice == "Профилю":
         target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
     else:
@@ -35,10 +32,8 @@ def statistics_page():
         password = "111333555"
         st.write("🕒 Анализ данных...")
 
-        # Запуск вашего существующего асинхронного сбора данных
         results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
 
-        # Вывод результатов в виде таблицы (как раньше)
         if results:
             df = pd.DataFrame(results)
             st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
