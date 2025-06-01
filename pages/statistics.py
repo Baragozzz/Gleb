@@ -1,44 +1,58 @@
 import streamlit as st
 import asyncio
+import subprocess
+import re
 import pandas as pd
 from datetime import datetime
-from utils.data_processing import async_main  # Импорт async_main()
+from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright, TimeoutError
 
-def statistics_page():
-    """Страница статистики матчей"""
-    st.subheader("Статистика матчей")
+# Попытка динамически установить Chromium (если ещё не установлен)
+try:
+    subprocess.run(["playwright", "install", "chromium"], check=True)
+except Exception as e:
+    st.write("Ошибка установки Playwright Chromium:", e)
 
-    mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
-    period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
+def parse_date(date_str):
+    """Преобразует строку 'ДД.ММ.ГГГГ ЧЧ:ММ' в объект datetime."""
+    return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
-    if period_mode == "День":
-        day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
-        year = datetime.now().year
-        filter_from = datetime.strptime(f"{day}.{year} 00:00", "%d.%m.%Y %H:%M")
-        filter_to = datetime.strptime(f"{day}.{year} 23:59", "%d.%m.%Y %H:%M")
-    else:
-        dt_from = st.text_input("От (ДД.ММ.ГГГГ ЧЧ:ММ):", value="01.01.2021 00:00")
-        dt_to = st.text_input("До (ДД.ММ.ГГГГ ЧЧ:ММ):", value="31.12.2021 23:59")
-        filter_from = datetime.strptime(dt_from, "%d.%m.%Y %H:%M")
-        filter_to = datetime.strptime(dt_to, "%d.%m.%Y %H:%M")
+def clean_nickname(raw_text):
+    """Очищает текст никнейма."""
+    nickname = raw_text.strip()
+    if "Профиль участника" in nickname:
+        nickname = nickname.replace("Профиль участника", "").strip()
+    if "–" in nickname:
+        nickname = nickname.split("–")[0].strip()
+    elif "-" in nickname:
+        nickname = nickname.split("-")[0].strip()
+    return nickname
 
-    if mode_choice == "Профилю":
-        target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
-    else:
-        target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
+async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
+    """Асинхронная обработка статистики матчей"""
+    computed_stats = {}
+    results = []
 
-    if st.button("Собрать статистику"):
-        login = "лао"
-        password = "111333555"
-        st.write("🕒 Анализ данных...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
 
-        # Запуск async_main()
-        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        try:
+            await page.goto("https://11x11.ru/", timeout=15000, wait_until="domcontentloaded")
+        except Exception:
+            st.write("Ошибка загрузки главной страницы")
+            return []
 
-        st.write("📊 Полученные данные:", results)  # Проверяем, что results не пустой
-        
-        if results:
-            df = pd.DataFrame(results)
-            st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-        else:
-            st.write("Нет результатов.")
+        await page.fill("input[name='auth_name']", login)
+        await page.fill("input[name='auth_pass1']", password)
+        await page.click("xpath=//input[@type='submit' and @value='Войти']")
+
+        try:
+            await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
+        except Exception:
+            st.write("Ошибка авторизации или загрузки страницы после входа")
+            return []
+
+        if mode_choice == "Профилю":
+            profile_url, nickname
