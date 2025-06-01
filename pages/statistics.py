@@ -10,7 +10,7 @@ def statistics_page():
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
 
-    # Выбор дат
+    # Выбор дат (ВОССТАНОВЛЕНО!)
     if period_mode == "День":
         day = st.text_input("Дата (ДД.ММ):", value=datetime.now().strftime("%d.%m"))
         year = datetime.now().year
@@ -28,15 +28,3 @@ def statistics_page():
     else:
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
 
-    if st.button("Собрать статистику"):
-        login = "лао"
-        password = "111333555"
-        st.write("🕒 Анализ данных...")
-        # Запуск асинхронного сбора данных (вставьте ваш существующий код анализа)
-        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
-        if results:
-            import pandas as pd
-            df = pd.DataFrame(results)
-            st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-        else:
-            st.write("Нет результатов.")
