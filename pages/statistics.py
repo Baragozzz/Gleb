@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from datetime import datetime
-from utils.data_processing import async_main  # Теперь импортируем из utils
+from utils.data_processing import async_main  # Импорт вашей логики
 
 def statistics_page():
     """Страница статистики матчей"""
