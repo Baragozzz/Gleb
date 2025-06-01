@@ -91,6 +91,33 @@ async def process_profile(context, profile_url, filter_from, filter_to, computed
     await page.close()
     return profile_url, nickname, wins, draws, losses
 
+async def async_get_profiles_from_guild(page, guild_url):
+    """Асинхронно получает список участников союза."""
+    guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
+    if not guild_id_match:
+        return []
+
+    guild_id = guild_id_match.group(1)
+    profiles = set()
+    page_num = 1
+
+    while True:
+        members_url = f"https://11x11.ru/xml/misc/guilds.php?page={page_num}&type=misc/guilds&act=members&id={guild_id}"
+        try:
+            await page.goto(members_url, timeout=15000, wait_until="domcontentloaded")
+            soup = BeautifulSoup(await page.content(), "html.parser")
+            new_profiles = {(f"https://11x11.ru{a['href']}", a.get_text(strip=True)) for a in soup.select("a[href^='/users/']")}
+        except Exception:
+            break
+
+        if not new_profiles - profiles:
+            break
+
+        profiles.update(new_profiles)
+        page_num += 1
+
+    return list(profiles)
+
 async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
     """Асинхронно собирает статистику матчей."""
     computed_stats = {}
