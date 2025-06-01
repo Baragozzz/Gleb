@@ -13,15 +13,34 @@ except Exception as e:
     st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
-    """Преобразует строку с датой в объект datetime с форматом 'ДД.ММ.ГГГГ ЧЧ:ММ'."""
+    """
+    Преобразует строку с датой в объект datetime.
+    Формат: "ДД.ММ.ГГГГ ЧЧ:ММ"
+    """
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+
+def clean_nickname(raw_text):
+    """
+    Извлекает чистое имя пользователя (ник) из строки, где может содержаться шаблон:
+    "Профиль участника Мечтатель - Онлайн игра 11x11" или "Мечтатель – профиль пользователя | 11x11".
+    Функция удаляет стандартные префиксы и постфиксы, оставляя только никнейм.
+    """
+    nickname = raw_text.strip()
+    # Если присутствует шаблон "Профиль участника", удаляем его
+    if "Профиль участника" in nickname:
+        nickname = nickname.replace("Профиль участника", "").strip()
+    # Пытаемся разделить по разделителям – или -
+    if "–" in nickname:
+        nickname = nickname.split("–")[0].strip()
+    elif "-" in nickname:
+        nickname = nickname.split("-")[0].strip()
+    return nickname
 
 def get_nickname(page, profile_url):
     """
     Переходит на страницу профиля и пытается извлечь никнейм.
-    Сначала ищем в теге <title>, разделяя по разделителю «–».
-    Если не найдено, берем содержимое тега <h1>.
-    Если и это не работает, возвращается последний компонент URL.
+    Сначала ищем в теге <title>, затем в теге <h1>.
+    Возвращается только чистый ник, например "Мечтатель".
     """
     page.goto(profile_url)
     try:
@@ -31,21 +50,22 @@ def get_nickname(page, profile_url):
     html = page.content()
     soup = BeautifulSoup(html, "html.parser")
     
-    # Попытка извлечь никнейм из заголовка страницы (<title>)
+    # Попытка извлечь из тега <title>
     title = soup.find("title")
     if title:
         title_text = title.get_text()
-        # Предположим, что заголовок имеет формат "Никнейм – прочее ..."
-        nickname = title_text.split("–")[0].strip()
+        nickname = clean_nickname(title_text)
         if nickname:
             return nickname
     
-    # Альтернативный способ: тег <h1>
+    # Альтернативно, попробовать взять из <h1>
     h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        return h1.get_text(strip=True)
+    if h1:
+        nickname = clean_nickname(h1.get_text())
+        if nickname:
+            return nickname
     
-    # Если ничего не найдено, возвращаем последний компонент URL
+    # Если ничего не найдено, использовать последний компонент URL
     return profile_url.split("/")[-1]
 
 def collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats):
@@ -100,6 +120,7 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
             b_tag = center.find("b")
             if b_tag and b_tag.find("a"):
                 href = b_tag.find("a")["href"]
+                # Если найденная ссылка содержит id данного пользователя – победа, иначе поражение
                 if user_id in href:
                     result = "Win"
                 else:
@@ -120,7 +141,7 @@ def get_profiles_from_guild(page, guild_url):
     """
     Получает список членов союза.
     Для каждого найденного элемента <a> возвращается кортеж (URL профиля, nickname),
-    где nickname берётся из текста ссылки.
+    где nickname извлекается из текста ссылки и очищается.
     """
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
@@ -143,7 +164,7 @@ def get_profiles_from_guild(page, guild_url):
         for a in soup.find_all("a", href=True):
             if re.match(r"^/users/\d+", a["href"]):
                 profile_url = "https://11x11.ru" + a["href"]
-                nickname = a.get_text(strip=True)
+                nickname = clean_nickname(a.get_text(strip=True))
                 if not nickname:
                     nickname = profile_url.split("/")[-1]
                 new_profiles.add((profile_url, nickname))
@@ -155,7 +176,8 @@ def get_profiles_from_guild(page, guild_url):
 
 def main():
     st.title("11x11 Статистика (Playwright)")
-    st.write("Приложение запустилось!")  # Отладочное сообщение
+    st.write("Приложение запустилось!")
+    
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
     period_mode = st.selectbox("Режим периода", ("День", "Интервал"))
     
@@ -183,10 +205,10 @@ def main():
         
         computed_stats = {}
         results = []  # Список для хранения результатов
-        table_placeholder = st.empty()  # Контейнер для обновления таблицы динамически
+        table_placeholder = st.empty()  # Контейнер для динамического обновления таблицы
         
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)  # Без указания executable_path
+            browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
             
@@ -198,9 +220,10 @@ def main():
             page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
             
             if mode_choice == "Профилю":
-                # Для одиночного профиля получаем никнейм с помощью get_nickname
+                # Для одиночного профиля – получаем ник через get_nickname
                 nickname = get_nickname(page, target_url)
                 wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
+                # Здесь выводится только чистый ник (без лишних данных) в качестве ссылки
                 profile_link = f'<a href="{target_url}" target="_blank">{nickname}</a>'
                 results.append({
                     "Профиль": profile_link,
@@ -211,7 +234,7 @@ def main():
                 df = pd.DataFrame(results)
                 table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
             else:
-                # Для Союза получаем список членов
+                # Для режима "Союз" получаем список членов
                 profile_tuples = get_profiles_from_guild(page, target_url)
                 if not profile_tuples:
                     st.write("Не удалось получить профили из союза.")
@@ -231,6 +254,7 @@ def main():
                         })
                         df = pd.DataFrame(results)
                         table_placeholder.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+                    # Добавляем итоговую строку
                     results.append({
                         "Профиль": "<b>Итого</b>",
                         "Побед": total_wins,
