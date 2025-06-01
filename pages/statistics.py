@@ -5,6 +5,7 @@ import pandas as pd
 import asyncio
 from datetime import datetime
 from bs4 import BeautifulSoup
+from utils.data_processing import async_get_profiles_from_guild
 from playwright.async_api import async_playwright, TimeoutError
 from utils.data_processing import async_get_nickname, async_collect_stats_for_profile
 
