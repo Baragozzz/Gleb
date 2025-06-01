@@ -40,7 +40,6 @@ async def async_get_nickname(page, profile_url):
     try:
         await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
     except TimeoutError:
-        # Если по истечении времени страница не загрузилась, возвращаем fallback без вывода сообщения
         return profile_url.split("/")[-1]
     except Exception:
         return profile_url.split("/")[-1]
@@ -216,6 +215,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
             return []
         
         if mode_choice == "Профилю":
+            # Режим одиночного профиля – обрабатываем один профиль
             profile_url, nickname, wins, draws, losses = await process_profile(context, target_url, filter_from, filter_to, computed_stats)
             results.append({
                 "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
@@ -224,6 +224,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 "Поражений": losses
             })
         else:
+            # Режим "Союз" – получаем список участников
             profile_tuples = await async_get_profiles_from_guild(page, target_url)
             if not profile_tuples:
                 await page.close()
@@ -236,9 +237,23 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
             tasks = [sem_process(profile_url) for (profile_url, _) in profile_tuples]
             profiles_results = await asyncio.gather(*tasks)
-            # Подсчитываем количество игроков, сыгравших хотя бы одну игру, и не сыгравших
-            active_count = sum(1 for (_, _, wins, draws, losses) in profiles_results if (wins + draws + losses) > 0)
-            inactive_count = len(profiles_results) - active_count
+            # Фильтрация и дедупликация по user_id; пропускаем записи с ником "Профиль"
+            dedup = {}
+            for pr in profiles_results:
+                profile_url, nickname, wins, draws, losses = pr
+                match = re.search(r'/users/(\d+)', profile_url)
+                if not match:
+                    continue
+                user_id = match.group(1)
+                if nickname == "Профиль":
+                    continue
+                dedup[user_id] = (profile_url, nickname, wins, draws, losses)
+            profiles_results = list(dedup.values())
+            
+            total_players = len(profiles_results)
+            active_count = sum(1 for (_, _, w, d, l) in profiles_results if (w + d + l) > 0)
+            inactive_count = total_players - active_count
+            
             for (profile_url, nickname, wins, draws, losses) in profiles_results:
                 results.append({
                     "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
@@ -246,10 +261,11 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     "Ничьих": draws,
                     "Поражений": losses
                 })
+            summary = f"Всего игроков: {total_players}, из них играли: {active_count}, из них не играли: {inactive_count}"
             results.append({
-                "Профиль": "<b>Итого</b>",
-                "Побед": active_count,      # Игравших
-                "Ничьих": inactive_count,    # Не игравших
+                "Профиль": f"<b>{summary}</b>",
+                "Побед": "",
+                "Ничьих": "",
                 "Поражений": ""
             })
             await page.close()
