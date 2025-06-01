@@ -1,24 +1,24 @@
 import streamlit as st
-import asyncio
 import subprocess
 import re
 import pandas as pd
+import asyncio
 from datetime import datetime
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, TimeoutError
 
-# Попытка динамически установить Chromium (если ещё не установлен)
+# Попытка установки Chromium (если ещё не установлен)
 try:
     subprocess.run(["playwright", "install", "chromium"], check=True)
 except Exception as e:
-    st.write("Ошибка установки Playwright Chromium:", e)
+    st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
     """Преобразует строку 'ДД.ММ.ГГГГ ЧЧ:ММ' в объект datetime."""
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
 def clean_nickname(raw_text):
-    """Очищает текст никнейма."""
+    """Очищает никнейм, убирая лишние элементы."""
     nickname = raw_text.strip()
     if "Профиль участника" in nickname:
         nickname = nickname.replace("Профиль участника", "").strip()
@@ -28,8 +28,16 @@ def clean_nickname(raw_text):
         nickname = nickname.split("-")[0].strip()
     return nickname
 
+async def process_profile(context, profile_url, filter_from, filter_to, computed_stats):
+    """Создаёт новую вкладку для профиля, получает ник и статистику."""
+    page = await context.new_page()
+    nickname = await async_get_nickname(page, profile_url)
+    wins, draws, losses = await async_collect_stats_for_profile(page, profile_url, filter_from, filter_to, computed_stats)
+    await page.close()
+    return profile_url, nickname, wins, draws, losses
+
 async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
-    """Асинхронная обработка статистики матчей"""
+    """Асинхронно собирает статистику матчей"""
     computed_stats = {}
     results = []
 
@@ -146,7 +154,11 @@ def statistics_page():
         password = "111333555"
         st.write("🕒 Анализ данных...")
 
-        results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        try:
+            results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
+        except RuntimeError:
+            st.write("❌ Ошибка: `asyncio.run()` нельзя вызывать внутри уже работающего event loop.")
+            return
 
         if results:
             df = pd.DataFrame(results)
