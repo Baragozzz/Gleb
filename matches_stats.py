@@ -1,16 +1,15 @@
 import streamlit as st
 import subprocess
-import time, re
+import re
 from datetime import datetime
-from collections import defaultdict
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-# Попытка динамически установить Chromium при запуске
+# Попытка динамически установить Chromium (если ещё не установлен)
 try:
     subprocess.run(["playwright", "install", "chromium"], check=True)
 except Exception as e:
-    st.write("Ошибка установки Chromium:", e)
+    st.write("Ошибка установки playwright chromium:", e)
 
 def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
@@ -26,15 +25,20 @@ def collect_stats_for_profile(page, profile_url, filter_from, filter_to, compute
     wins = draws = losses = 0
     page_num = 1
     while True:
-        history_url = (f"https://11x11.ru/xml/games/history.php?page={page_num}"
-                       f"&type=games/history&act=userhistory&user={user_id}")
+        history_url = f"https://11x11.ru/xml/games/history.php?page={page_num}&type=games/history&act=userhistory&user={user_id}"
         page.goto(history_url)
-        time.sleep(2)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass  # Если страница-load не завершилась, продолжаем
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
+        rows = soup.find_all("tr")
+        if not rows:
+            break
         found_match = False
         stop = False
-        for row in soup.find_all("tr"):
+        for row in rows:
             cols = row.find_all("td")
             if len(cols) < 4:
                 continue
@@ -81,10 +85,12 @@ def get_profiles_from_guild(page, guild_url):
     profiles = set()
     pagenum = 1
     while True:
-        members_url = (f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}"
-                       f"&type=misc/guilds&act=members&id={guild_id}")
+        members_url = f"https://11x11.ru/xml/misc/guilds.php?page={pagenum}&type=misc/guilds&act=members&id={guild_id}"
         page.goto(members_url)
-        time.sleep(2)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
         new_profiles = set()
@@ -111,16 +117,25 @@ def main():
         dt_to = st.text_input("До (ДД.ММ.ГГГГ ЧЧ:ММ):", value="31.12.2021 23:59")
         filter_from = datetime.strptime(dt_from, "%d.%m.%Y %H:%M")
         filter_to = datetime.strptime(dt_to, "%d.%m.%Y %H:%M")
+        
     if mode_choice == "Профилю":
         target_url = st.text_input("Введите URL профиля:", value="https://11x11.ru/users/3941656")
     else:
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
+        
     if st.button("Собрать статистику"):
-        login = "Мечтатель"
-        password = "31#!Baragoz"
+        login = "лао"
+        password = "111333555"
         computed_stats = {}
+        results = []  # Список для хранения результатов каждого профиля
+        
+        # Контейнер для вывода таблицы
+        table_placeholder = st.empty()
+        
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            # Запускаем Chromium с явным указанием пути к бинарнику,
+            # убедитесь, что путь соответствует установленному на вашей платформе (Streamlit Cloud)
+            browser = p.chromium.launch(headless=True, executable_path="/usr/bin/chromium-browser")
             context = browser.new_context()
             page = context.new_page()
             page.goto("https://11x11.ru/")
@@ -128,29 +143,43 @@ def main():
             page.fill("input[name='auth_pass1']", password)
             page.click("xpath=//input[@type='submit' and @value='Войти']")
             page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
+            
             if mode_choice == "Профилю":
                 wins, draws, losses = collect_stats_for_profile(page, target_url, filter_from, filter_to, computed_stats)
-                st.write("Профиль:", target_url)
-                st.write("Побед:", wins)
-                st.write("Ничьих:", draws)
-                st.write("Поражений:", losses)
+                results.append({
+                    "Профиль": target_url,
+                    "Побед": wins,
+                    "Ничьих": draws,
+                    "Поражений": losses
+                })
+                table_placeholder.table(results)
             else:
                 profile_urls = get_profiles_from_guild(page, target_url)
                 if not profile_urls:
                     st.write("Не удалось получить профили из союза.")
                 else:
                     total_wins = total_draws = total_losses = 0
-                    st.write("Найдено профилей:", len(profile_urls))
                     for url in profile_urls:
                         wins, draws, losses = collect_stats_for_profile(page, url, filter_from, filter_to, computed_stats)
-                        st.write("Профиль:", url, "Побед:", wins, "Ничьих:", draws, "Поражений:", losses)
+                        results.append({
+                            "Профиль": url,
+                            "Побед": wins,
+                            "Ничьих": draws,
+                            "Поражений": losses
+                        })
                         total_wins += wins
                         total_draws += draws
                         total_losses += losses
-                    st.write("Общая статистика по союзу:")
-                    st.write("Побед:", total_wins)
-                    st.write("Ничьих:", total_draws)
-                    st.write("Поражений:", total_losses)
+                        # Обновляем таблицу после обработки каждого профиля
+                        table_placeholder.table(results)
+                    # Добавляем итоговую строку
+                    results.append({
+                        "Профиль": "Итого",
+                        "Побед": total_wins,
+                        "Ничьих": total_draws,
+                        "Поражений": total_losses
+                    })
+                    table_placeholder.table(results)
             context.close()
             browser.close()
 
