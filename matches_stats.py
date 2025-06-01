@@ -38,7 +38,8 @@ async def async_get_nickname(page, profile_url):
     Если загрузка не успешна (таймаут), возвращается последний компонент URL.
     """
     try:
-        await page.goto(profile_url, timeout=6000)
+        # Увеличиваем таймаут до 15000 мс
+        await page.goto(profile_url, timeout=15000)
     except TimeoutError as e:
         st.write(f"Timeout при загрузке профиля {profile_url}: {e}")
         return profile_url.split("/")[-1]
@@ -47,8 +48,8 @@ async def async_get_nickname(page, profile_url):
         return profile_url.split("/")[-1]
     
     try:
-        # Ждем появления элемента <h1> в течение 5000 мс, это свидетельствует о том, что страница загрузилась
-        await page.wait_for_selector("h1", timeout=5000)
+        # Ждем появления элемента <h1> в течение 10000 мс
+        await page.wait_for_selector("h1", timeout=10000)
     except Exception:
         pass
 
@@ -88,14 +89,15 @@ async def async_collect_stats_for_profile(page, profile_url, filter_from, filter
             f"&type=games/history&act=userhistory&user={user_id}"
         )
         try:
-            await page.goto(history_url, timeout=6000)
+            await page.goto(history_url, timeout=15000)
         except Exception:
             break
         try:
-            # Ждем появления хотя бы одной строки таблицы истории
-            await page.wait_for_selector("tr", timeout=5000)
+            # Ждем появления хотя бы одной строки таблицы истории в течение 10000 мс
+            await page.wait_for_selector("tr", timeout=10000)
         except Exception:
             pass
+        
         html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         rows = soup.find_all("tr")
@@ -159,13 +161,15 @@ async def async_get_profiles_from_guild(page, guild_url):
             f"&type=misc/guilds&act=members&id={guild_id}"
         )
         try:
-            await page.goto(members_url, timeout=6000)
+            await page.goto(members_url, timeout=15000)
         except Exception:
             break
         try:
-            await page.wait_for_selector("a[href^='/users/']", timeout=5000)
+            # Ждем появления ссылок на пользователей в течение 10000 мс
+            await page.wait_for_selector("a[href^='/users/']", timeout=10000)
         except Exception:
             pass
+        
         html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         new_profiles = set()
@@ -185,8 +189,8 @@ async def async_get_profiles_from_guild(page, guild_url):
 
 async def process_profile(context, profile_url, filter_from, filter_to, computed_stats):
     """
-    Создаёт новую вкладку для профиля, получает ник и статистику, затем закрывает вкладку.
-    Возвращает кортеж (profile_url, nickname, wins, draws, losses).
+    Создаёт новую вкладку для профиля, получает ник и статистику,
+    затем закрывает вкладку. Возвращает кортеж (profile_url, nickname, wins, draws, losses).
     """
     page = await context.new_page()
     nickname = await async_get_nickname(page, profile_url)
@@ -200,12 +204,21 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
+        # Страница для авторизации (и получения списка участников, если режим "Союз")
         page = await context.new_page()
-        await page.goto("https://11x11.ru/", timeout=8000)
+        try:
+            await page.goto("https://11x11.ru/", timeout=15000)
+        except Exception:
+            st.write("Ошибка загрузки главной страницы")
+            return []
         await page.fill("input[name='auth_name']", login)
         await page.fill("input[name='auth_pass1']", password)
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
-        await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=6000)
+        try:
+            await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
+        except Exception:
+            st.write("Ошибка авторизации или загрузки страницы после входа")
+            return []
         
         if mode_choice == "Профилю":
             profile_url, nickname, wins, draws, losses = await process_profile(context, target_url, filter_from, filter_to, computed_stats)
@@ -251,7 +264,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     return results
 
 def main():
-    st.title("11x11 Статистика (Асинхронный Playwright, оптимизированное ожидание с обработкой таймаута)")
+    st.title("11x11 Статистика (Асинхронный Playwright, увеличенные таймауты)")
     st.write("Приложение запустилось!")
     
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
