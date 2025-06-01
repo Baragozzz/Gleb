@@ -18,10 +18,6 @@ def parse_date(date_str):
     return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
 
 def clean_nickname(raw_text):
-    """
-    Очищает текст никнейма.
-    Например, из строки "Профиль участника Мечтатель – Онлайн игра 11x11" возвращает "Мечтатель".
-    """
     nickname = raw_text.strip()
     if "Профиль участника" in nickname:
         nickname = nickname.replace("Профиль участника", "").strip()
@@ -39,7 +35,8 @@ async def async_get_nickname(page, profile_url):
     """
     await page.goto(profile_url)
     try:
-        await page.wait_for_load_state("networkidle", timeout=10000)
+        # Ждем появления элемента <h1> (как индикатор того, что профиль загружен)
+        await page.wait_for_selector("h1", timeout=5000)
     except Exception:
         pass
     html = await page.content()
@@ -79,7 +76,8 @@ async def async_collect_stats_for_profile(page, profile_url, filter_from, filter
         )
         await page.goto(history_url)
         try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
+            # Ждем появления хотя бы одной строки таблицы истории
+            await page.wait_for_selector("tr", timeout=5000)
         except Exception:
             pass
         html = await page.content()
@@ -131,7 +129,7 @@ async def async_get_profiles_from_guild(page, guild_url):
     """
     Асинхронно получает список участников союза.
     Для каждого найденного профиля возвращается кортеж (profile_url, nickname).
-    По каждой странице вычисляется набор новых элементов; если новых не появляется – цикл завершается.
+    Если на следующей странице не появилось новых уникальных профилей – цикл завершается.
     """
     guild_id_match = re.search(r'/guilds/(\d+)', guild_url)
     if not guild_id_match:
@@ -146,7 +144,8 @@ async def async_get_profiles_from_guild(page, guild_url):
         )
         await page.goto(members_url)
         try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
+            # Ждем появления ссылок на пользователей
+            await page.wait_for_selector("a[href^='/users/']", timeout=5000)
         except Exception:
             pass
         html = await page.content()
@@ -159,7 +158,7 @@ async def async_get_profiles_from_guild(page, guild_url):
                 if not nickname:
                     nickname = profile_url.split("/")[-1]
                 new_profiles.add((profile_url, nickname))
-        # Если не найдено ни одного нового уникального профиля, завершаем цикл
+        # Завершаем цикл, если нет новых уникальных элементов
         diff = new_profiles - profiles
         if not diff:
             break
@@ -170,8 +169,7 @@ async def async_get_profiles_from_guild(page, guild_url):
 async def process_profile(context, profile_url, filter_from, filter_to, computed_stats):
     """
     Обрабатывает один профиль: открывает новую вкладку, получает ник и статистику,
-    затем закрывает вкладку.
-    Возвращает кортеж (profile_url, nickname, wins, draws, losses).
+    затем закрывает вкладку. Возвращает кортеж (profile_url, nickname, wins, draws, losses).
     """
     page = await context.new_page()
     nickname = await async_get_nickname(page, profile_url)
@@ -185,13 +183,13 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
-        # Создаём страницу для авторизации и получения списка участников (при режиме союза)
+        # Страница для авторизации (и получения списка участников при режиме "Союз")
         page = await context.new_page()
         await page.goto("https://11x11.ru/")
         await page.fill("input[name='auth_name']", login)
         await page.fill("input[name='auth_pass1']", password)
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
-        await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]")
+        await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=5000)
         
         if mode_choice == "Профилю":
             # Обработка одиночного профиля
@@ -210,7 +208,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 await context.close()
                 await browser.close()
                 return []
-            semaphore = asyncio.Semaphore(10)  # Ограничение параллелизма
+            semaphore = asyncio.Semaphore(10)
             async def sem_process(profile_url):
                 async with semaphore:
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
@@ -239,7 +237,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     return results
 
 def main():
-    st.title("11x11 Статистика (Асинхронный Playwright)")
+    st.title("11x11 Статистика (Асинхронный Playwright, оптимизированное ожидание)")
     st.write("Приложение запустилось!")
     
     mode_choice = st.selectbox("Строить статистику по:", ("Профилю", "Союзу"))
