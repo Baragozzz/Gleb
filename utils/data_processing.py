@@ -131,7 +131,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
     computed_stats = {}
     results = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
         context = await browser.new_context()
         page = await context.new_page()
 
