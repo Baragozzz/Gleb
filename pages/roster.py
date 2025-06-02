@@ -15,19 +15,22 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     Открывает страницу профиля и пытается извлечь:
       - Значение "Сила 11 лучших"
       - Значение "Ср. сила 11 лучших"
-    Реализовано с до 3-х попыток, чтобы учесть динамическую загрузку контента.
+    Делается до 3 попыток с ожиданием, чтобы учесть динамическую загрузку контента.
     Возвращает кортеж (power_value, avg_power_value).
     """
     page = await context.new_page()
     try:
         await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
-        await page.wait_for_selector("td", timeout=5000)
+        # Ждем, чтобы базовый контент загрузился
+        await page.wait_for_selector("td", timeout=10000)
         
         power_value = "N/A"
         avg_power_value = "N/A"
-        
+
         max_attempts = 3
         for attempt in range(max_attempts):
+            # Дополнительное ожидание для динамического контента
+            await asyncio.sleep(2)
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
             
@@ -48,12 +51,9 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                     new_avg = next_avg_td.get_text(strip=True)
                     if new_avg:
                         avg_power_value = new_avg
-
-            # Прерываем попытки, если хотя бы одно значение найдено
+            # Если хотя бы одно значение получено, считаем попытку успешной
             if power_value != "N/A" or avg_power_value != "N/A":
                 break
-            else:
-                await asyncio.sleep(1)
                 
         return power_value, avg_power_value
     except Exception as e:
@@ -68,7 +68,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
     для каждого профиля извлекает показатели:
       - "Сила 11 лучших"
       - "Ср. сила 11 лучших"
-    Из списка исключается профиль, под которым происходит авторизация.
+    Из списка исключается профиль, под которым производится авторизация.
     Возвращает кортеж:
       (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value))
     """
@@ -87,7 +87,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем ссылку залогиненного пользователя, чтобы потом исключить его из списка
+        # Получаем ссылку залогиненного пользователя
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
@@ -95,8 +95,11 @@ async def async_get_roster(guild_url: str, login: str, password: str):
             if href and href.startswith("/users/"):
                 logged_profile_url = "https://11x11.ru" + href
         
-        # Перейдем на страницу союза для получения информации о союзе
+        # Переход на страницу союза и ожидание появления названия
         await page.goto(guild_url, timeout=15000, wait_until="domcontentloaded")
+        await page.wait_for_selector("h3", timeout=10000)
+        # Дополнительное ожидание для динамического контента
+        await asyncio.sleep(2)
         alliance_html = await page.content()
         soup_alliance = BeautifulSoup(alliance_html, "html.parser")
         h3 = soup_alliance.find("h3")
@@ -104,7 +107,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         
         # Получаем список участников союза – кортежи (profile_url, nickname)
         roster = await async_get_profiles_from_guild(page, guild_url)
-        # Фильтруем: исключаем профиль залогиненного пользователя
+        # Фильтрация: удаляем профиль, под которым логинимся
         if logged_profile_url:
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         
