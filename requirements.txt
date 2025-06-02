@@ -2,3 +2,4 @@ streamlit
 playwright
 beautifulsoup4
 pandas
+nest_asyncio
