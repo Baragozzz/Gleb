@@ -15,36 +15,67 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     Открывает страницу профиля и извлекает:
       - Значение "Сила 11 лучших"
       - Значение "Ср. сила 11 лучших"
+    Если хотя бы один из показателей равен "N/A", то функция повторяет попытку (до 5 раз).
+    В каждой попытке создаётся новая страница, выполняется навигация с внутренним циклом из 3-х повторов,
+    затем производится разбор страницы с помощью BeautifulSoup.
     Возвращает кортеж (power_value, avg_power_value).
     """
-    page = await context.new_page()
-    try:
-        await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
-        await asyncio.sleep(1)  # даём немного времени на загрузку динамики
-        html = await page.content()
-        soup = BeautifulSoup(html, "html.parser")
-        
-        power_value = "N/A"
-        avg_power_value = "N/A"
-        
-        power_label_td = soup.find("td", string=re.compile(r"Сила\s*11\s*лучших", re.IGNORECASE))
-        if power_label_td:
-            next_td = power_label_td.find_next_sibling("td")
-            if next_td:
-                power_value = next_td.get_text(strip=True)
-        
-        avg_power_label_td = soup.find("td", string=re.compile(r"Ср\.\s*сила\s*11\s*лучших", re.IGNORECASE))
-        if avg_power_label_td:
-            next_avg_td = avg_power_label_td.find_next_sibling("td")
-            if next_avg_td:
-                avg_power_value = next_avg_td.get_text(strip=True)
+    max_outer_attempts = 5
+    final_result = ("N/A", "N/A")
+    for outer_attempt in range(max_outer_attempts):
+        # Создаем новую страницу для каждой попытки
+        page = await context.new_page()
+        try:
+            # Пытаемся выполнить навигацию до 3-х раз (внутренний цикл)
+            max_inner_attempts = 3
+            navigation_success = False
+            for inner in range(max_inner_attempts):
+                try:
+                    await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
+                    navigation_success = True
+                    break
+                except Exception as e:
+                    print(f"Attempt {inner+1} to navigate to {profile_url} failed: {e}")
+                    await asyncio.sleep(1)
+            if not navigation_success:
+                final_result = ("N/A", "N/A")
+            else:
+                # Даем немного времени на загрузку динамических элементов
+                await asyncio.sleep(1)
+                html = await page.content()
+                soup = BeautifulSoup(html, "html.parser")
                 
-        return power_value, avg_power_value
-    except Exception as e:
-        print(f"Error in async_get_profile_stats for {profile_url}: {e}")
-        return "N/A", "N/A"
-    finally:
-        await page.close()
+                power_value = "N/A"
+                avg_power_value = "N/A"
+                
+                # Извлечение значения "Сила 11 лучших"
+                power_label_td = soup.find("td", string=re.compile(r"Сила\s*11\s*лучших", re.IGNORECASE))
+                if power_label_td:
+                    next_td = power_label_td.find_next_sibling("td")
+                    if next_td:
+                        power_value = next_td.get_text(strip=True)
+                
+                # Извлечение значения "Ср. сила 11 лучших"
+                avg_power_label_td = soup.find("td", string=re.compile(r"Ср\.\s*сила\s*11\s*лучших", re.IGNORECASE))
+                if avg_power_label_td:
+                    next_td = avg_power_label_td.find_next_sibling("td")
+                    if next_td:
+                        avg_power_value = next_td.get_text(strip=True)
+                
+                final_result = (power_value, avg_power_value)
+        except Exception as ex:
+            print(f"General error in async_get_profile_stats for {profile_url}: {ex}")
+            final_result = ("N/A", "N/A")
+        finally:
+            await page.close()
+        # Если оба значения получены (не "N/A"), завершаем внешний цикл
+        if final_result[0] != "N/A" and final_result[1] != "N/A":
+            return final_result
+        else:
+            print(f"Outer attempt {outer_attempt+1} for {profile_url} resulted in {final_result}. Retrying...")
+            await asyncio.sleep(1)
+    # Если после всех попыток данные так и не получены – возвращаем последний результат
+    return final_result
 
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
@@ -69,7 +100,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем URL залогиненного пользователя для исключения его из списка
+        # Получаем URL залогиненного пользователя для исключения из списка
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
