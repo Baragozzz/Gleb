@@ -1,6 +1,8 @@
 import streamlit as st
 from pages.statistics import statistics_page
 from pages.roster import roster_page
+import os
+os.system("playwright install")
 
 def main():
     st.title("11x11 Статистика")
