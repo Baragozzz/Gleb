@@ -3,6 +3,8 @@ import asyncio
 import nest_asyncio
 from playwright.async_api import async_playwright
 from utils.data_processing import async_get_profiles_from_guild
+import os
+os.system("playwright install")
 
 # Применим патч для текущего event loop
 nest_asyncio.apply()
