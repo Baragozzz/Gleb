@@ -29,8 +29,8 @@ def statistics_page():
 
     if st.button("Собрать статистику"):
         # Замените логин и пароль на свои данные
-        login = "Ваш_логин"
-        password = "Ваш_пароль"
+        login = "лао"
+        password = "111333555"
         st.write("🕒 Анализ данных...")
         try:
             results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
