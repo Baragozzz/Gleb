@@ -122,7 +122,6 @@ async def async_get_profiles_from_guild(page, guild_url):
         html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         new_profiles = {f"https://11x11.ru{a['href']}" for a in soup.find_all("a", href=True) if re.match(r"^/users/\d+", a["href"])}
-        # Если новых профилей не найдено, заканчиваем цикл.
         if not new_profiles - set(profile_urls):
             break
 
@@ -171,7 +170,6 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 async with semaphore:
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
             profiles_results = await asyncio.gather(*[sem_process(url) for url in profile_urls])
-            # Убираем дублирование, используя уникальный user_id
             dedup = {re.search(r'/users/(\d+)', pr[0]).group(1): pr for pr in profiles_results if re.search(r'/users/\d+', pr[0])}
             profiles_results = list(dedup.values())
 
