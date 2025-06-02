@@ -16,15 +16,15 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     """
     Открывает страницу профиля и извлекает:
       - "Сила 11 лучших"
-      - "Ср. сила 11 лучших"
-      - "Gk": максимальное значение из колонки "Мас" для игроков, у которых в колонке "Поз" равно "Gk".
-        При обходе таблицы игроков итерация прекращается при встрече строки с иным значением в "Поз".
-    
+      - "Gk": максимальное значение из колонки "Мас" для игроков, 
+         у которых в колонке "Поз" равно "Gk". При обходе таблицы игроков 
+         итерация прекращается при встрече строки с иным значением в "Поз".
+
     Если хотя бы один показатель равен "N/A", функция повторяет всю процедуру до 5 раз.
-    Возвращает тройку (power_value, avg_power_value, gk_value).
+    Возвращает кортеж (power_value, gk_value).
     """
     max_outer_attempts = 5
-    final_result = ("N/A", "N/A", "N/A")
+    final_result = ("N/A", "N/A")
     for outer_attempt in range(max_outer_attempts):
         page = await context.new_page()
         try:
@@ -40,9 +40,9 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                     print(f"Attempt {inner+1} to navigate to {profile_url} failed: {e}")
                     await asyncio.sleep(1)
             if not navigation_success:
-                final_result = ("N/A", "N/A", "N/A")
+                final_result = ("N/A", "N/A")
             else:
-                await asyncio.sleep(1)  # время для динамического контента
+                await asyncio.sleep(1)  # время для загрузки динамического контента
                 html = await page.content()
                 soup = BeautifulSoup(html, "html.parser")
                 
@@ -53,14 +53,6 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                     next_td = power_label_td.find_next_sibling("td")
                     if next_td:
                         power_value = next_td.get_text(strip=True)
-                
-                # Извлечение "Ср. сила 11 лучших"
-                avg_value = "N/A"
-                avg_power_label_td = soup.find("td", string=re.compile(r"Ср\.\s*сила\s*11\s*лучших", re.IGNORECASE))
-                if avg_power_label_td:
-                    next_td = avg_power_label_td.find_next_sibling("td")
-                    if next_td:
-                        avg_value = next_td.get_text(strip=True)
                         
                 # Извлечение показателя "Gk"
                 gk_value = "N/A"
@@ -70,7 +62,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                     h3_elem = soup.find("h3", string=re.compile(r"Игроки\s+команды", re.IGNORECASE))
                     if h3_elem:
                         players_table = h3_elem.find_next("table")
-                    # Если не найдено через h3, пробуем перебрать все таблицы
+                    # Если через h3 не найдено, перебираем все таблицы на предмет наличия "Поз" и "Мас"
                     if not players_table:
                         for table in soup.find_all("table"):
                             header = table.find("tr")
@@ -80,7 +72,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                                     players_table = table
                                     break
                     if players_table:
-                        # Определяем индексы колонок "Поз" и "Мас" (ищем по наличию подстроки без учета регистра)
+                        # Определяем индексы колонок "Поз" и "Мас" (ищем по наличию подстроки, без учета регистра)
                         header_cells = players_table.find("tr").find_all(["th", "td"])
                         poz_index = None
                         mas_index = None
@@ -90,7 +82,6 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                                 poz_index = i
                             if "мас" in text:
                                 mas_index = i
-                        # Если оба индекса найдены, перебираем строки (пропуская заголовок)
                         if poz_index is not None and mas_index is not None:
                             gk_masses = []
                             rows = players_table.find_all("tr")[1:]  # пропускаем заголовок
@@ -113,14 +104,14 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                 except Exception as e:
                     print(f"Error extracting GK value for {profile_url}: {e}")
                 
-                final_result = (power_value, avg_value, gk_value)
+                final_result = (power_value, gk_value)
         except Exception as ex:
             print(f"General error in async_get_profile_stats for {profile_url}: {ex}")
-            final_result = ("N/A", "N/A", "N/A")
+            final_result = ("N/A", "N/A")
         finally:
             await page.close()
             
-        if final_result[0] != "N/A" and final_result[1] != "N/A" and final_result[2] != "N/A":
+        if final_result[0] != "N/A" and final_result[1] != "N/A":
             return final_result
         else:
             print(f"Outer attempt {outer_attempt+1} for {profile_url} resulted in {final_result}. Retrying...")
@@ -135,11 +126,10 @@ async def async_get_roster(guild_url: str, login: str, password: str):
     Из списка исключается профиль, под которым выполнена авторизация.
     Для каждого участника параллельно вызывается async_get_profile_stats для получения:
       - "Сила 11 лучших"
-      - "Ср. сила 11 лучших"
       - "Gk"
     Используется asyncio.Semaphore для ограничения количества одновременно открытых страниц.
     Возвращает кортеж:
-         (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value, gk_value))
+         (alliance_name, список кортежей (profile_url, nickname, power_value, gk_value))
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -156,7 +146,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем URL залогиненного профиля для исключения его из списка
+        # Получаем URL залогиненного профиля для исключения
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
@@ -174,13 +164,13 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         except Exception as e:
             print(f"Error retrieving alliance name for {guild_url}: {e}")
         
-        # Получаем список участников союза через функцию async_get_profiles_from_guild
+        # Получаем список участников союза через async_get_profiles_from_guild
         roster = await async_get_profiles_from_guild(page, guild_url)
         if logged_profile_url:
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         await page.close()
         
-        # Ограничиваем количество одновременно запускаемых задач с помощью семафора
+        # Ограничиваем количество одновременно работающих задач с помощью семафора (лимит 20)
         semaphore = asyncio.Semaphore(20)
         async def safe_get_profile_stats(profile_url: str) -> tuple:
             async with semaphore:
@@ -193,8 +183,8 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         stats_values = await asyncio.gather(*tasks)
         
         new_roster = []
-        for (profile_url, nickname), (power, avg_power, gk) in zip(roster, stats_values):
-            new_roster.append((profile_url, nickname, power, avg_power, gk))
+        for (profile_url, nickname), (power, gk) in zip(roster, stats_values):
+            new_roster.append((profile_url, nickname, power, gk))
         
         await context.close()
         await browser.close()
@@ -219,14 +209,14 @@ def roster_page():
         if roster:
             st.markdown("### Список участников:")
             data = []
-            for profile_url, nickname, power, avg_power, gk in roster:
+            for profile_url, nickname, power, gk in roster:
                 data.append({
                     "Профиль": f'<a href="{profile_url}" target="_blank">{nickname}</a>',
                     "Сила 11 лучших": power,
-                    "Ср. сила 11 лучших": avg_power,
                     "Gk": gk
                 })
             df = pd.DataFrame(data)
+            # Фильтруем пустые строки, если они есть
             df = df[df["Профиль"].str.strip() != ""]
             st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         else:
