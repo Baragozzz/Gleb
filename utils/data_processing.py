@@ -1,3 +1,4 @@
+import streamlit as st
 from playwright.async_api import async_playwright, TimeoutError
 async def async_main(mode_choice, target_url, filter_from, filter_to, login, password):
     computed_stats = {}
