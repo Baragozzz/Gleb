@@ -7,8 +7,8 @@ from playwright.async_api import async_playwright
 from utils.data_processing import async_get_profiles_from_guild
 from bs4 import BeautifulSoup
 import os
-
 os.system("playwright install")
+
 # Патчим event loop для корректной работы асинхронного кода в Streamlit
 nest_asyncio.apply()
 
@@ -18,9 +18,9 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
       - "Сила 11 лучших"
       - "Ср. сила 11 лучших"
       - "Gk": максимальное значение из колонки "Мас" для игроков, у которых в колонке "Поз" равно "Gk".
-        По таблице игроков итерация прекращается при встрече строки с иным значением в "Поз".
+        При обходе таблицы игроков итерация прекращается, как только встречается строка с иным значением в "Поз".
     
-    Если хотя бы один показатель равен "N/A", выполняется повторная попытка (до 5 внешних попыток).
+    Если хотя бы один показатель равен "N/A", функция повторяет всю процедуру до 5 раз.
     Возвращает тройку (power_value, avg_power_value, gk_value).
     """
     max_outer_attempts = 5
@@ -28,7 +28,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     for outer_attempt in range(max_outer_attempts):
         page = await context.new_page()
         try:
-            # Внутренний цикл попыток навигации (до 3 раз)
+            # Внутренний цикл (до 3-х попыток навигации)
             max_inner_attempts = 3
             navigation_success = False
             for inner in range(max_inner_attempts):
@@ -42,8 +42,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
             if not navigation_success:
                 final_result = ("N/A", "N/A", "N/A")
             else:
-                # Небольшая задержка для получения динамического контента
-                await asyncio.sleep(1)
+                await asyncio.sleep(1)  # время для загрузки динамического контента
                 html = await page.content()
                 soup = BeautifulSoup(html, "html.parser")
                 
@@ -66,7 +65,8 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                 # Извлечение показателя "Gk"
                 gk_value = "N/A"
                 try:
-                    # Перебираем все таблицы и находим ту, где присутствуют заголовки "Поз" и "Мас"
+                    # Ищем таблицу с игроками: выбираем первую таблицу,
+                    # в которой встречаются оба слова "Поз" и "Мас"
                     players_table = None
                     for table in soup.find_all("table"):
                         header = table.find("tr")
@@ -76,25 +76,26 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                                 players_table = table
                                 break
                     if players_table:
-                        # Определяем индексы колонок "Поз" и "Мас"
+                        # Определяем индексы колонок "Поз" и "Мас" – теперь ищем по наличию подстроки (без учета регистра)
                         header_cells = players_table.find("tr").find_all(["th", "td"])
                         poz_index = None
                         mas_index = None
                         for i, cell in enumerate(header_cells):
-                            text = cell.get_text(strip=True)
-                            if text == "Поз":
+                            text = cell.get_text(strip=True).lower()
+                            if "поз" in text:
                                 poz_index = i
-                            if text == "Мас":
+                            if "мас" in text:
                                 mas_index = i
+                        # Если оба индекса найдены, перебираем строки таблицы (пропуская заголовок)
                         if poz_index is not None and mas_index is not None:
                             gk_masses = []
                             rows = players_table.find_all("tr")[1:]  # пропускаем заголовок
                             for row in rows:
                                 cells = row.find_all("td")
                                 if len(cells) > max(poz_index, mas_index):
-                                    poz_text = cells[poz_index].get_text(strip=True)
-                                    # Если значение в "Поз" стало отличаться от "Gk", прерываем цикл
-                                    if poz_text != "Gk":
+                                    poz_text = cells[poz_index].get_text(strip=True).lower()
+                                    # Если значение в "Поз" не равно "gk", прекращаем поиск
+                                    if poz_text != "gk":
                                         break
                                     mas_text = cells[mas_index].get_text(strip=True)
                                     try:
@@ -115,6 +116,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
         finally:
             await page.close()
             
+        # Если все три показателя получены, выходим из внешнего цикла
         if final_result[0] != "N/A" and final_result[1] != "N/A" and final_result[2] != "N/A":
             return final_result
         else:
@@ -125,13 +127,13 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
     Логинится на сайте, переходит на страницу союза и получает:
-      • Название союза (из элемента <h3>)
-      • Список участников союза (функция async_get_profiles_from_guild возвращает кортежи (profile_url, nickname))
+      - Название союза (из элемента <h3>)
+      - Список участников союза (функция async_get_profiles_from_guild возвращает кортежи (profile_url, nickname))
     Из списка исключается профиль, под которым выполнена авторизация.
     Для каждого участника параллельно вызывается async_get_profile_stats для получения:
-      • "Сила 11 лучших"
-      • "Ср. сила 11 лучших"
-      • "Gk"
+      - "Сила 11 лучших"
+      - "Ср. сила 11 лучших"
+      - "Gk"
     Используется asyncio.Semaphore для ограничения количества одновременно открытых страниц.
     Возвращает кортеж:
          (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value, gk_value))
@@ -175,7 +177,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         await page.close()
         
-        # Ограничиваем количество одновременно запускаемых задач с помощью семафора
+        # Ограничиваем число одновременно работающих задач семафором (лимит 20)
         semaphore = asyncio.Semaphore(20)
         async def safe_get_profile_stats(profile_url: str) -> tuple:
             async with semaphore:
