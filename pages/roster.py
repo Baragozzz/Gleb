@@ -4,68 +4,107 @@ import nest_asyncio
 import pandas as pd
 from playwright.async_api import async_playwright
 from utils.data_processing import async_get_profiles_from_guild
+from bs4 import BeautifulSoup
 
 # Патчим event loop для корректной работы асинхронного кода в Streamlit
 nest_asyncio.apply()
 
 async def async_get_profile_stats(context, profile_url: str) -> tuple:
     """
-    Открывает страницу профиля и извлекает показатели:
+    Пытается открыть страницу профиля с показателями:
       • "Сила 11 лучших"
       • "Ср. сила 11 лучших"
-    Если переход на страницу не удаётся выполнить за 15 секунд, или значения не получены – функция сразу возвращает "N/A".
+    Делает до 3 попыток открытия страницы с таймаутом 30 секунд за попытку.
+    Если все попытки завершаются неудачно, возвращает ("N/A", "N/A").
+    После успешного перехода ждёт 3 секунды для загрузки динамики,
+    затем пытается получить значения через XPath-селекторы с ожиданием.
+    При необходимости используется fallback через BeautifulSoup.
     """
+    max_retries = 3
+    page_timeout = 30000  # таймаут в миллисекундах (30 сек)
     page = await context.new_page()
-    try:
-        # Пытаемся перейти на страницу профиля с таймаутом 15 сек.
+    navigation_success = False
+
+    for attempt in range(max_retries):
         try:
-            await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
+            await page.goto(profile_url, timeout=page_timeout, wait_until="domcontentloaded")
+            navigation_success = True
+            break
         except Exception as e:
-            print(f"Navigation error for {profile_url}: {e}. Skipping profile.")
-            return "N/A", "N/A"
-
-        # Ждем короткую задержку для динамического контента
-        await asyncio.sleep(3)
-
-        # Извлекаем значение "Сила 11 лучших"
-        try:
-            power_selector = "//td[contains(normalize-space(.), 'Сила 11 лучших')]/following-sibling::td[1]"
-            await page.wait_for_selector(power_selector, timeout=10000)
-            power_element = await page.query_selector(power_selector)
-            power_value = (await power_element.inner_text()).strip() if power_element else "N/A"
-        except Exception as e:
-            print(f"Error retrieving 'Сила 11 лучших' for {profile_url}: {e}")
-            power_value = "N/A"
-
-        # Извлекаем значение "Ср. сила 11 лучших"
-        try:
-            avg_selector = "//td[contains(normalize-space(.), 'Ср. сила 11 лучших')]/following-sibling::td[1]"
-            await page.wait_for_selector(avg_selector, timeout=10000)
-            avg_element = await page.query_selector(avg_selector)
-            avg_value = (await avg_element.inner_text()).strip() if avg_element else "N/A"
-        except Exception as e:
-            print(f"Error retrieving 'Ср. сила 11 лучших' for {profile_url}: {e}")
-            avg_value = "N/A"
-
-        return power_value, avg_value
-
-    except Exception as e:
-        print(f"General error in async_get_profile_stats for {profile_url}: {e}")
-        return "N/A", "N/A"
-    finally:
+            print(f"Attempt {attempt + 1} to navigate to {profile_url} failed: {e}")
+            await asyncio.sleep(2)
+    if not navigation_success:
+        print(f"Navigation failed for {profile_url} after {max_retries} attempts. Returning N/A.")
         await page.close()
+        return "N/A", "N/A"
+
+    # Даем время для загрузки динамического контента
+    await asyncio.sleep(3)
+
+    # XPath-селекторы для значений
+    power_selector = "//td[contains(normalize-space(.), 'Сила 11 лучших')]/following-sibling::td[1]"
+    avg_selector = "//td[contains(normalize-space(.), 'Ср. сила 11 лучших')]/following-sibling::td[1]"
+
+    power_value = "N/A"
+    avg_value = "N/A"
+
+    # Попытка извлечения через селекторы с ожиданием
+    try:
+        await page.wait_for_selector(power_selector, timeout=15000)
+        power_element = await page.query_selector(power_selector)
+        if power_element:
+            power_value = (await power_element.inner_text()).strip()
+    except Exception as e:
+        print(f"Error retrieving 'Сила 11 лучших' for {profile_url}: {e}")
+
+    try:
+        await page.wait_for_selector(avg_selector, timeout=15000)
+        avg_element = await page.query_selector(avg_selector)
+        if avg_element:
+            avg_value = (await avg_element.inner_text()).strip()
+    except Exception as e:
+        print(f"Error retrieving 'Ср. сила 11 лучших' for {profile_url}: {e}")
+
+    # Если какие-то значения так и не получены, используем fallback на BeautifulSoup
+    if power_value == "N/A" or avg_value == "N/A":
+        try:
+            html = await page.content()
+            soup = BeautifulSoup(html, "html.parser")
+            if power_value == "N/A":
+                power_td = soup.find("td", text=lambda t: t and "Сила 11 лучших" in t)
+                if power_td:
+                    next_td = power_td.find_next_sibling("td")
+                    if next_td:
+                        power_value = next_td.get_text(strip=True)
+            if avg_value == "N/A":
+                avg_td = soup.find("td", text=lambda t: t and "Ср. сила 11 лучших" in t)
+                if avg_td:
+                    next_td = avg_td.find_next_sibling("td")
+                    if next_td:
+                        avg_value = next_td.get_text(strip=True)
+        except Exception as e:
+            print(f"Fallback error parsing HTML for {profile_url}: {e}")
+
+    await page.close()
+    return power_value, avg_value
 
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
-    Авторизуется на сайте, переходит на страницу союза, получает название союза и список участников.
-    Для каждого участника (за исключением профиля, под которым выполнена авторизация) с помощью async_get_profile_stats
-    извлекаются показатели "Сила 11 лучших" и "Ср. сила 11 лучших".
+    Выполняет авторизацию на сайте, переходит на страницу союза и получает:
+      • Название союза (из элемента <h3>)
+      • Список участников союза (получается через async_get_profiles_from_guild)
+    Из списка исключается профиль, под которым выполнена авторизация.
+    Для каждого участника параллельно вызывается async_get_profile_stats для получения:
+      • "Сила 11 лучших"
+      • "Ср. сила 11 лучших"
     Возвращает кортеж:
          (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value))
     """
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox"])
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
         context = await browser.new_context()
         page = await context.new_page()
 
@@ -76,7 +115,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
 
-        # Получаем URL залогиненного профиля, чтобы затем исключить его из списка
+        # Получаем URL залогиненного профиля, чтобы потом его исключить
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
@@ -94,13 +133,13 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         except Exception as e:
             print(f"Error retrieving alliance name for {guild_url}: {e}")
 
-        # Получаем список участников союза (функция async_get_profiles_from_guild должна возвращать кортежи (profile_url, nickname))
+        # Получаем список участников союза (предполагается, что async_get_profiles_from_guild возвращает кортежи (profile_url, nickname))
         roster = await async_get_profiles_from_guild(page, guild_url)
         if logged_profile_url:
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         await page.close()
 
-        # Для каждого участника извлекаем показатели
+        # Параллельно для каждого профиля получаем показатели
         tasks = []
         for profile in roster:
             profile_url, _ = profile
