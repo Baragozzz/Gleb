@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from datetime import datetime
-from utils.data_processing import async_main  # Импортируем только главную функцию
+from utils.data_processing import async_main  # Основной метод сбора статистики
 
 def statistics_page():
     """Страница статистики матчей"""
@@ -28,8 +28,9 @@ def statistics_page():
         target_url = st.text_input("Введите URL союза:", value="https://11x11.ru/guilds/139")
 
     if st.button("Собрать статистику"):
-        login = "YOUR_LOGIN"       # замените на реальный логин
-        password = "YOUR_PASSWORD" # замените на реальный пароль
+        # Замените логин и пароль на свои данные
+        login = "Ваш_логин"
+        password = "Ваш_пароль"
         st.write("🕒 Анализ данных...")
         try:
             results = asyncio.run(async_main(mode_choice, target_url, filter_from, filter_to, login, password))
