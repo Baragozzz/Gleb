@@ -227,6 +227,7 @@ def roster_page():
                     "Gk": gk
                 })
             df = pd.DataFrame(data)
+            df = df[df["Профиль"].str.strip() != ""]
             st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         else:
             st.write("Нет результатов.")
