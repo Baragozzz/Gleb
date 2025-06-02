@@ -21,13 +21,11 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     page = await context.new_page()
     try:
         await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
-        # Ждем, чтобы базовый контент загрузился
         await page.wait_for_selector("td", timeout=5000)
         
         power_value = "N/A"
         avg_power_value = "N/A"
-
-        # Попытаемся до 3-х раз получить актуальные значения
+        
         max_attempts = 3
         for attempt in range(max_attempts):
             html = await page.content()
@@ -51,11 +49,10 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                     if new_avg:
                         avg_power_value = new_avg
 
-            # Если хотя бы одно значение получено (или оба не N/A) - выходим
+            # Прерываем попытки, если хотя бы одно значение найдено
             if power_value != "N/A" or avg_power_value != "N/A":
                 break
             else:
-                # Если не получилось, подождем секунду и повторим попытку
                 await asyncio.sleep(1)
                 
         return power_value, avg_power_value
@@ -67,11 +64,13 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
 
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
-    Авторизуется, получает список участников союза и для каждого профиля извлекает показатели:
+    Авторизуется на сайте, получает информацию о союзе и список участников союза, 
+    для каждого профиля извлекает показатели:
       - "Сила 11 лучших"
       - "Ср. сила 11 лучших"
     Из списка исключается профиль, под которым происходит авторизация.
-    Возвращает список кортежей (profile_url, nickname, power_value, avg_power_value).
+    Возвращает кортеж:
+      (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value))
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -88,7 +87,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем ссылку залогиненного пользователя
+        # Получаем ссылку залогиненного пользователя, чтобы потом исключить его из списка
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
@@ -96,15 +95,22 @@ async def async_get_roster(guild_url: str, login: str, password: str):
             if href and href.startswith("/users/"):
                 logged_profile_url = "https://11x11.ru" + href
         
+        # Перейдем на страницу союза для получения информации о союзе
+        await page.goto(guild_url, timeout=15000, wait_until="domcontentloaded")
+        alliance_html = await page.content()
+        soup_alliance = BeautifulSoup(alliance_html, "html.parser")
+        h3 = soup_alliance.find("h3")
+        alliance_name = h3.get_text(strip=True) if h3 else "N/A"
+        
         # Получаем список участников союза – кортежи (profile_url, nickname)
         roster = await async_get_profiles_from_guild(page, guild_url)
-        # Фильтруем: исключаем протфель залогиненного пользователя (если найден)
+        # Фильтруем: исключаем профиль залогиненного пользователя
         if logged_profile_url:
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         
         await page.close()
         
-        # Для каждого профиля получаем показатели с помощью async_get_profile_stats
+        # Для каждого профиля получаем показатели "Сила 11 лучших" и "Ср. сила 11 лучших"
         tasks = []
         for profile in roster:
             profile_url, _ = profile
@@ -117,7 +123,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         
         await context.close()
         await browser.close()
-        return new_roster
+        return alliance_name, new_roster
 
 def roster_page():
     st.title("Ростер игроков")
@@ -131,10 +137,13 @@ def roster_page():
         with st.spinner("Загружаем ростер игроков..."):
             try:
                 loop = asyncio.get_event_loop()
-                roster = loop.run_until_complete(async_get_roster(guild_url, login, password))
+                alliance_name, roster = loop.run_until_complete(async_get_roster(guild_url, login, password))
             except Exception as e:
                 st.error(f"Ошибка: {e}")
                 return
+        
+        # Вывод информации о союзе
+        st.markdown(f"### Союз: {alliance_name}")
         
         if roster:
             st.markdown("### Список участников:")
