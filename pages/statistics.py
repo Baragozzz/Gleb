@@ -3,6 +3,8 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 from utils.data_processing import async_main  # Основной метод сбора статистики
+import os
+os.system("playwright install")
 
 def statistics_page():
     """Страница статистики матчей"""
