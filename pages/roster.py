@@ -216,11 +216,12 @@ def roster_page():
                     "Gk": gk
                 })
             df = pd.DataFrame(data)
-            # Фильтруем пустые строки, если они есть
-            df = df[df["Профиль"].str.strip() != ""]
+            # Фильтруем строки, где в колонке "Профиль" отсутствуют буквы или цифры.
+            df = df[df["Профиль"].str.contains(r"[A-Za-zА-Яа-я0-9]", regex=True)]
             st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         else:
             st.write("Нет результатов.")
+
 
 if __name__ == "__main__":
     roster_page()
