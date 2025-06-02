@@ -15,11 +15,24 @@ async def async_get_nickname(page, profile_url):
 
         title_tag = soup.find("title")
         if title_tag:
-            return title_tag.get_text(strip=True).split("–")[0].strip()
+            title_text = title_tag.get_text(strip=True)
+            # Если заголовок начинается с "Профиль участника", убираем этот префикс
+            prefix = "Профиль участника "
+            if title_text.startswith(prefix):
+                title_text = title_text[len(prefix):]
+            # Разбиваем текст по разделителю " - " и берём первую часть
+            nickname = title_text.split(" - ")[0].strip()
+            return nickname
 
         h1 = soup.find("h1")
         if h1:
-            return h1.get_text(strip=True).split("–")[0].strip()
+            h1_text = h1.get_text(strip=True)
+            # Аналогично обрабатываем, если заголовок H1 имеет похожий формат
+            prefix = "Профиль участника "
+            if h1_text.startswith(prefix):
+                h1_text = h1_text[len(prefix):]
+            nickname = h1_text.split(" - ")[0].strip()
+            return nickname
     except TimeoutError:
         return profile_url.split("/")[-1]
 
