@@ -11,7 +11,7 @@ def home_page():
     # Добавляем GIF (можно заменить URL на свой или указать путь к локальному файлу GIF)
     st.image(
     "https://i.gifer.com/1uzh.gif",
-    caption="Добро пожаловать!",
+    caption="Макакины проделки",
     use_container_width=True)
     st.markdown("""
     Это приложение предназначено для анализа и мониторинга статистики 11x11.
