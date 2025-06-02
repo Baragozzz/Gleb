@@ -5,6 +5,8 @@ import pandas as pd
 from playwright.async_api import async_playwright
 from utils.data_processing import async_get_profiles_from_guild
 from bs4 import BeautifulSoup
+import os
+os.system("playwright install")
 
 # Патчим event loop для корректной работы асинхронного кода в Streamlit
 nest_asyncio.apply()
