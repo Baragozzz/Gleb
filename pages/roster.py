@@ -2,52 +2,59 @@ import streamlit as st
 import asyncio
 import nest_asyncio
 import pandas as pd
+import re
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from utils.data_processing import async_get_profiles_from_guild
 
-# Патчим event loop для работы в Streamlit
+# Патчим event loop для корректной работы асинхронного кода в Streamlit
 nest_asyncio.apply()
 
 async def async_get_profile_stats(context, profile_url: str) -> tuple:
     """
     Открывает страницу профиля и извлекает:
-    - Значение "Сила 11 лучших"
-    - Значение "Ср. сила 11 лучших"
+      - Значение "Сила 11 лучших"
+      - Значение "Ср. сила 11 лучших"
     Возвращает кортеж (power_value, avg_power_value).
     """
     page = await context.new_page()
     try:
         await page.goto(profile_url, timeout=15000, wait_until="domcontentloaded")
+        # Добавляем небольшую задержку, чтобы динамический контент успел загрузиться
+        await asyncio.sleep(1)
         html = await page.content()
         soup = BeautifulSoup(html, "html.parser")
         
-        # Извлечение "Сила 11 лучших"
         power_value = "N/A"
-        power_label_td = soup.find("td", string=lambda text: text and "Сила 11 лучших" in text)
+        avg_power_value = "N/A"
+        
+        # Поиск "Сила 11 лучших"
+        power_label_td = soup.find("td", string=re.compile(r"Сила\s*11\s*лучших", re.IGNORECASE))
         if power_label_td:
             next_td = power_label_td.find_next_sibling("td")
             if next_td:
                 power_value = next_td.get_text(strip=True)
         
-        # Извлечение "Ср. сила 11 лучших"
-        avg_power_value = "N/A"
-        avg_power_label_td = soup.find("td", string=lambda text: text and "Ср. сила 11 лучших" in text)
+        # Поиск "Ср. сила 11 лучших"
+        avg_power_label_td = soup.find("td", string=re.compile(r"Ср\.\s*сила\s*11\s*лучших", re.IGNORECASE))
         if avg_power_label_td:
             next_avg_td = avg_power_label_td.find_next_sibling("td")
             if next_avg_td:
                 avg_power_value = next_avg_td.get_text(strip=True)
                 
         return power_value, avg_power_value
-    except Exception:
+    except Exception as e:
+        # Можно добавить логирование ошибки, если потребуется
+        print(f"Error in async_get_profile_stats for {profile_url}: {e}")
         return "N/A", "N/A"
     finally:
         await page.close()
 
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
-    Авторизуется, получает список участников союза и для каждого профиля извлекает
-    показатели "Сила 11 лучших" и "Ср. сила 11 лучших".
+    Авторизуется на сайте, получает список участников союза и для каждого профиля извлекает показатели:
+      - "Сила 11 лучших"
+      - "Ср. сила 11 лучших"
     Возвращает список кортежей (profile_url, nickname, power_value, avg_power_value).
     """
     async with async_playwright() as p:
@@ -65,11 +72,11 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем список участников союза – список кортежей (profile_url, nickname)
+        # Получаем список участников союза (кортежи: (profile_url, nickname))
         roster = await async_get_profiles_from_guild(page, guild_url)
         await page.close()  # закрываем страницу авторизации
         
-        # Для каждого профиля получаем "Сила 11 лучших" и "Ср. сила 11 лучших"
+        # Для каждого профиля получаем показатели
         tasks = []
         for profile in roster:
             profile_url, _ = profile
