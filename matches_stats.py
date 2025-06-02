@@ -1,20 +1,12 @@
 import streamlit as st
-from pages.statistics import statistics_page
 from pages.roster import roster_page
 import os
 os.system("playwright install")
 
 def main():
     st.title("11x11 Статистика")
-
-    # Создание вкладок
-    tab1, tab2 = st.tabs(["Статистика матчей", "Ростер игроков"])
-
-    with tab1:
-        statistics_page()  # Вызов страницы статистики матчей
-
-    with tab2:
-        roster_page()  # Вызов страницы роста игроков
+    # Вызываем только страницу "Ростер игроков"
+    roster_page()
 
 if __name__ == "__main__":
     main()
