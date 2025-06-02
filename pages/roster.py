@@ -44,7 +44,6 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                 
         return power_value, avg_power_value
     except Exception as e:
-        # Можно добавить логирование ошибки, если потребуется
         print(f"Error in async_get_profile_stats for {profile_url}: {e}")
         return "N/A", "N/A"
     finally:
@@ -56,6 +55,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
       - "Сила 11 лучших"
       - "Ср. сила 11 лучших"
     Возвращает список кортежей (profile_url, nickname, power_value, avg_power_value).
+    При этом из списка автоматически исключается профиль, под которым мы логинимся.
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -72,11 +72,23 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
         
-        # Получаем список участников союза (кортежи: (profile_url, nickname))
-        roster = await async_get_profiles_from_guild(page, guild_url)
-        await page.close()  # закрываем страницу авторизации
+        # Получаем ссылку залогиненного пользователя
+        logged_profile_link = await page.query_selector("a[href^='/users/']")
+        logged_profile_url = None
+        if logged_profile_link:
+            href = await logged_profile_link.get_attribute("href")
+            if href and href.startswith("/users/"):
+                logged_profile_url = "https://11x11.ru" + href
         
-        # Для каждого профиля получаем показатели
+        # Получаем список участников союза – кортежи (profile_url, nickname)
+        roster = await async_get_profiles_from_guild(page, guild_url)
+        # Фильтруем: исключаем профиль залогиненного пользователя, если он есть в списке
+        if logged_profile_url:
+            roster = [entry for entry in roster if entry[0] != logged_profile_url]
+        
+        await page.close()
+        
+        # Для каждого профиля получаем показатели "Сила 11 лучших" и "Ср. сила 11 лучших"
         tasks = []
         for profile in roster:
             profile_url, _ = profile
