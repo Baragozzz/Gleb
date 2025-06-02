@@ -9,9 +9,10 @@ os.system("playwright install")
 def home_page():
     st.title("Добро пожаловать в 11x11 Статистика!")
     # Добавляем GIF (можно заменить URL на свой или указать путь к локальному файлу GIF)
-    st.image("https://i.gifer.com/1uzh.gif",
-             caption="Добро пожаловать!",
-             use_column_width=True)
+    st.image(
+    "https://i.gifer.com/1uzh.gif",
+    caption="Добро пожаловать!",
+    use_container_width=True)
     st.markdown("""
     Это приложение предназначено для анализа и мониторинга статистики 11x11.
 
