@@ -6,6 +6,21 @@ from datetime import datetime
 import streamlit as st
 from playwright.async_api import async_playwright, TimeoutError
 
+def clean_nickname(nickname):
+    """
+    Очищает строку с никнеймом:
+    - Удаляет префикс "Профиль участника" (если присутствует).
+    - Разбивает строку по символам тире (как en-dash, так и обычный дефис) и оставляет первую часть.
+    """
+    nickname = nickname.strip()
+    if nickname.startswith("Профиль участника"):
+        nickname = nickname.replace("Профиль участника", "").strip()
+    # Разбиваем по символам тире (–) или дефису (-)
+    parts = re.split(r"[-–]", nickname)
+    if parts:
+        return parts[0].strip()
+    return nickname
+
 async def async_get_nickname(page, profile_url):
     """Получает никнейм пользователя по ссылке профиля."""
     try:
@@ -15,11 +30,11 @@ async def async_get_nickname(page, profile_url):
 
         title_tag = soup.find("title")
         if title_tag:
-            return title_tag.get_text(strip=True).split("–")[0].strip()
+            return clean_nickname(title_tag.get_text(strip=True))
 
         h1 = soup.find("h1")
         if h1:
-            return h1.get_text(strip=True).split("–")[0].strip()
+            return clean_nickname(h1.get_text(strip=True))
     except TimeoutError:
         return profile_url.split("/")[-1]
 
@@ -103,8 +118,8 @@ async def async_get_profiles_from_guild(page, guild_url):
         try:
             await page.goto(members_url, timeout=15000, wait_until="domcontentloaded")
             soup = BeautifulSoup(await page.content(), "html.parser")
-            new_profiles = { (f"https://11x11.ru{a['href']}", a.get_text(strip=True))
-                             for a in soup.select("a[href^='/users/']") }
+            new_profiles = {(f"https://11x11.ru{a['href']}", a.get_text(strip=True))
+                             for a in soup.select("a[href^='/users/']")}
         except Exception:
             break
         if not new_profiles - profiles:
@@ -122,7 +137,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Авторизация
+        # Авторизация на сайте
         await page.goto("https://11x11.ru/", timeout=15000, wait_until="domcontentloaded")
         await page.fill("input[name='auth_name']", login)
         await page.fill("input[name='auth_pass1']", password)
@@ -150,7 +165,8 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                     return await process_profile(context, profile_url, filter_from, filter_to, computed_stats)
             tasks = [sem_process(profile_url) for (profile_url, _) in profile_tuples]
             profiles_results = await asyncio.gather(*tasks)
-            dedup = { re.search(r'/users/(\d+)', pr[0]).group(1): pr for pr in profiles_results if re.search(r'/users/\d+', pr[0]) }
+            dedup = { re.search(r'/users/(\d+)', pr[0]).group(1): pr for pr in profiles_results 
+                     if re.search(r'/users/\d+', pr[0]) }
             profiles_results = dedup.values()
             total_players = len(profiles_results)
             active_count = sum(1 for (_, _, w, d, l) in profiles_results if (w + d + l) > 0)
@@ -168,6 +184,7 @@ async def async_main(mode_choice, target_url, filter_from, filter_to, login, pas
                 "Ничьих": "",
                 "Поражений": ""
             })
+
         await page.close()
         await context.close()
         await browser.close()
