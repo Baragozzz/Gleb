@@ -18,7 +18,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
       - "Сила 11 лучших"
       - "Ср. сила 11 лучших"
       - "Gk": максимальное значение из колонки "Мас" для игроков, у которых в колонке "Поз" равно "Gk".
-        При обходе таблицы игроков итерация прекращается, как только встречается строка с иным значением в "Поз".
+        При обходе таблицы игроков итерация прекращается при встрече строки с иным значением в "Поз".
     
     Если хотя бы один показатель равен "N/A", функция повторяет всю процедуру до 5 раз.
     Возвращает тройку (power_value, avg_power_value, gk_value).
@@ -42,7 +42,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
             if not navigation_success:
                 final_result = ("N/A", "N/A", "N/A")
             else:
-                await asyncio.sleep(1)  # время для загрузки динамического контента
+                await asyncio.sleep(1)  # время для динамического контента
                 html = await page.content()
                 soup = BeautifulSoup(html, "html.parser")
                 
@@ -65,18 +65,22 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                 # Извлечение показателя "Gk"
                 gk_value = "N/A"
                 try:
-                    # Ищем таблицу с игроками: выбираем первую таблицу,
-                    # в которой встречаются оба слова "Поз" и "Мас"
                     players_table = None
-                    for table in soup.find_all("table"):
-                        header = table.find("tr")
-                        if header:
-                            header_text = header.get_text()
-                            if "Поз" in header_text and "Мас" in header_text:
-                                players_table = table
-                                break
+                    # Сначала ищем заголовок h3 с текстом "Игроки команды"
+                    h3_elem = soup.find("h3", string=re.compile(r"Игроки\s+команды", re.IGNORECASE))
+                    if h3_elem:
+                        players_table = h3_elem.find_next("table")
+                    # Если не найдено через h3, пробуем перебрать все таблицы
+                    if not players_table:
+                        for table in soup.find_all("table"):
+                            header = table.find("tr")
+                            if header:
+                                header_text = header.get_text()
+                                if "Поз" in header_text and "Мас" in header_text:
+                                    players_table = table
+                                    break
                     if players_table:
-                        # Определяем индексы колонок "Поз" и "Мас" – теперь ищем по наличию подстроки (без учета регистра)
+                        # Определяем индексы колонок "Поз" и "Мас" (ищем по наличию подстроки без учета регистра)
                         header_cells = players_table.find("tr").find_all(["th", "td"])
                         poz_index = None
                         mas_index = None
@@ -86,7 +90,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
                                 poz_index = i
                             if "мас" in text:
                                 mas_index = i
-                        # Если оба индекса найдены, перебираем строки таблицы (пропуская заголовок)
+                        # Если оба индекса найдены, перебираем строки (пропуская заголовок)
                         if poz_index is not None and mas_index is not None:
                             gk_masses = []
                             rows = players_table.find_all("tr")[1:]  # пропускаем заголовок
@@ -116,7 +120,6 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
         finally:
             await page.close()
             
-        # Если все три показателя получены, выходим из внешнего цикла
         if final_result[0] != "N/A" and final_result[1] != "N/A" and final_result[2] != "N/A":
             return final_result
         else:
@@ -177,7 +180,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         await page.close()
         
-        # Ограничиваем число одновременно работающих задач семафором (лимит 20)
+        # Ограничиваем количество одновременно запускаемых задач с помощью семафора
         semaphore = asyncio.Semaphore(20)
         async def safe_get_profile_stats(profile_url: str) -> tuple:
             async with semaphore:
