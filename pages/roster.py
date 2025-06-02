@@ -14,14 +14,14 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     Пытается открыть страницу профиля с показателями:
       • "Сила 11 лучших"
       • "Ср. сила 11 лучших"
-    Делает до 3 попыток открытия страницы с таймаутом 30 секунд за попытку.
-    Если все попытки завершаются неудачно, возвращает ("N/A", "N/A").
-    После успешного перехода ждёт 3 секунды для загрузки динамики,
-    затем пытается получить значения через XPath-селекторы с ожиданием.
+    Делает до 3-х попыток навигации с таймаутом 30 секунд за попытку.
+    Если ни одна попытка не успешна — возвращает ("N/A", "N/A").
+    После успешного перехода ждет 3 секунды для загрузки динамики,
+    затем извлекает значения через XPath-селекторы с ожиданием (до 15 сек).
     При необходимости используется fallback через BeautifulSoup.
     """
     max_retries = 3
-    page_timeout = 30000  # таймаут в миллисекундах (30 сек)
+    page_timeout = 30000  # таймаут в мс (30 сек)
     page = await context.new_page()
     navigation_success = False
 
@@ -38,17 +38,16 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
         await page.close()
         return "N/A", "N/A"
 
-    # Даем время для загрузки динамического контента
+    # Ждем, чтобы динамический контент подгрузился
     await asyncio.sleep(3)
-
-    # XPath-селекторы для значений
-    power_selector = "//td[contains(normalize-space(.), 'Сила 11 лучших')]/following-sibling::td[1]"
-    avg_selector = "//td[contains(normalize-space(.), 'Ср. сила 11 лучших')]/following-sibling::td[1]"
 
     power_value = "N/A"
     avg_value = "N/A"
 
-    # Попытка извлечения через селекторы с ожиданием
+    # XPath-селекторы для нужных значений
+    power_selector = "//td[contains(normalize-space(.), 'Сила 11 лучших')]/following-sibling::td[1]"
+    avg_selector = "//td[contains(normalize-space(.), 'Ср. сила 11 лучших')]/following-sibling::td[1]"
+
     try:
         await page.wait_for_selector(power_selector, timeout=15000)
         power_element = await page.query_selector(power_selector)
@@ -65,7 +64,7 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
     except Exception as e:
         print(f"Error retrieving 'Ср. сила 11 лучших' for {profile_url}: {e}")
 
-    # Если какие-то значения так и не получены, используем fallback на BeautifulSoup
+    # Если значения так и не получены, пробуем fallback через BeautifulSoup.
     if power_value == "N/A" or avg_value == "N/A":
         try:
             html = await page.content()
@@ -90,13 +89,16 @@ async def async_get_profile_stats(context, profile_url: str) -> tuple:
 
 async def async_get_roster(guild_url: str, login: str, password: str):
     """
-    Выполняет авторизацию на сайте, переходит на страницу союза и получает:
+    Логинится на сайте, переходит на страницу союза и получает:
       • Название союза (из элемента <h3>)
-      • Список участников союза (получается через async_get_profiles_from_guild)
+      • Список участников союза (функция async_get_profiles_from_guild возвращает кортежи (profile_url, nickname))
     Из списка исключается профиль, под которым выполнена авторизация.
-    Для каждого участника параллельно вызывается async_get_profile_stats для получения:
+    Для каждого участника параллельно вызывается async_get_profile_stats
+    для получения:
       • "Сила 11 лучших"
       • "Ср. сила 11 лучших"
+    Чтобы избежать перегрузок, используется asyncio.Semaphore для ограничения
+    количества одновременно открытых страниц.
     Возвращает кортеж:
          (alliance_name, список кортежей (profile_url, nickname, power_value, avg_power_value))
     """
@@ -115,7 +117,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         await page.click("xpath=//input[@type='submit' and @value='Войти']")
         await page.wait_for_selector("xpath=//a[contains(text(), 'Выход')]", timeout=15000)
 
-        # Получаем URL залогиненного профиля, чтобы потом его исключить
+        # Получаем URL залогиненного профиля для фильтрации
         logged_profile_link = await page.query_selector("a[href^='/users/']")
         logged_profile_url = None
         if logged_profile_link:
@@ -123,7 +125,7 @@ async def async_get_roster(guild_url: str, login: str, password: str):
             if href and href.startswith("/users/"):
                 logged_profile_url = "https://11x11.ru" + href
 
-        # Переход на страницу союза для получения названия альянса
+        # Переход на страницу союза для получения названия союза
         await page.goto(guild_url, timeout=30000, wait_until="domcontentloaded")
         await asyncio.sleep(3)
         alliance_name = "N/A"
@@ -133,17 +135,23 @@ async def async_get_roster(guild_url: str, login: str, password: str):
         except Exception as e:
             print(f"Error retrieving alliance name for {guild_url}: {e}")
 
-        # Получаем список участников союза (предполагается, что async_get_profiles_from_guild возвращает кортежи (profile_url, nickname))
+        # Получаем список участников союза через функцию async_get_profiles_from_guild
         roster = await async_get_profiles_from_guild(page, guild_url)
         if logged_profile_url:
             roster = [entry for entry in roster if entry[0] != logged_profile_url]
         await page.close()
 
-        # Параллельно для каждого профиля получаем показатели
+        # Ограничиваем количество одновременно запускаемых задач с помощью семафора
+        semaphore = asyncio.Semaphore(20)
+
+        async def safe_get_profile_stats(profile_url: str) -> tuple:
+            async with semaphore:
+                return await async_get_profile_stats(context, profile_url)
+
         tasks = []
         for profile in roster:
             profile_url, _ = profile
-            tasks.append(async_get_profile_stats(context, profile_url))
+            tasks.append(safe_get_profile_stats(profile_url))
         stats_values = await asyncio.gather(*tasks)
 
         new_roster = []
